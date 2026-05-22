@@ -1,0 +1,7 @@
+name: winui-ui-builder
+version: 1.0.0
+description: Generates production-ready Windows applications powered by Syncfusion WinUI components. Orchestrates a structured workflow that covers UI design, component selection, code generation, and validation, with built-in accessibility (WCAG 2.1 AA) and adaptive layouts. Use when building WinUI applications, creating desktop UI components, designing interfaces, or generating frontend code for Windows apps.
+author: Syncfusion Inc
+dependencies:
+  apm:
+    - syncfusion/winui-ui-components-skills
