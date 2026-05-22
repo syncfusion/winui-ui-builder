@@ -65,14 +65,20 @@
    - Verify `Window.Content` is set to the Frame instance
    - Ensure the generated page has a parameterless constructor for the navigation system to use
 
-10. **Runtime Error Validation (CRITICAL):**
-   - No "Cannot find a Resource with the Name/Key [ResourceName]" errors
-   - All value converters (StringToVisibilityConverter, etc.) defined in resource dictionary
-   - Theme resources properly initialized before runtime
-   - Missing converter registrations: check ResourceDictionary merged files
-   - Missing theme resources: verify Syncfusion theme loaded in App.xaml
-   - Test app launch to verify no runtime resource errors
-   - Check Output window for "WinRT information" warnings
+10. **Runtime Resource Resolution (CRITICAL):**
+   - Load Syncfusion theme resources in `App.xaml` before custom controls
+   - Register all value converters in resource dictionary at application startup
+   - Merge ResourceDictionary files using `<ResourceDictionary.MergedDictionaries>` in correct load order
+   - Match XAML namespace URIs to assembly namespaces exactly (e.g., `xmlns:local="using:YourNamespace"`)
+   - Ensure resource keys are unique across all dictionaries
+   - Validate resource resolution at startup
+   
+   **Best Practices:**
+   - Place Syncfusion theme dictionary first in MergedDictionaries to prevent key conflicts
+   - Define all custom converters in resource dictionary, not code-behind only
+   - Use exact namespace URIs to prevent resolution failures (typos in `using:` or `clr-namespace:` break lookups)
+   - Consolidate duplicate resource keys into single definitions
+   - Test application startup to confirm all resources load successfully
 
 ## MSBuild Compilation & Error Detection
 

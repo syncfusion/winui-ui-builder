@@ -44,9 +44,6 @@ apm install syncfusion/winui-ui-builder -t cursor
 
 # Install for Codex
 apm install syncfusion/winui-ui-builder -t codex
-
-# Install for Windsurf
-apm install syncfusion/winui-ui-builder -t windsurf
 ```
 
 ## How It Works
