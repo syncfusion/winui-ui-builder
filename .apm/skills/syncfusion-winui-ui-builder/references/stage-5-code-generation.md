@@ -1,507 +1,508 @@
 # Stage 5: Code Generation
 
-**Purpose:** Generate production-ready WinUI code, XAML, and C# interfaces with accessibility and desktop standards compliance.
+**Purpose:** Generate production-ready WinUI code (XAML + C# + ViewModel + Services) that is fully wired, compilable, and feature-complete using only skill-file-verified APIs.
 
-## CRITICAL: Read Control Skills BEFORE Code Generation
+**Inputs:** `control-mapping.json` (Stage 3) · `skill-extraction.json` (Stage 5B) · **Stage 4 design decisions** (colors, spacing, typography, MVVM mapping, startup view plan)
+**Output:** Complete UI + backend — zero stubs, zero missing handlers, zero assumed APIs. **All code uses Stage 4 tokens & MVVM mapping.**
 
-**THIS STEP IS NOT OPTIONAL - Must be completed before writing any code**
-
-### Step 0: Validate Control Mapping from Stage 3
-
-**BEFORE proceeding, check the validation report from Stage 3:**
-
-1. **Review validation errors**: If `native_fallbacks` > 0, check what controls were not found
-2. **Verify no invalid controls**: Ensure no `✗ NOT in controls.csv` controls are being used
-3. **If errors exist**: Either:
-   - Accept NATIVE_XAML fallbacks and proceed, OR
-   - Go back to Stage 3 and redesign layout using only verified Syncfusion controls
-
-### Step 1: Identify All Control Skills from Stage 3
-
-From Stage 3 output, extract **ONLY the verified controls** with validation status = `✓ VERIFIED`:
-
-- Example: `syncfusion-winui-datagrid`, `syncfusion-winui-chart`, etc. (from `skill` field)
-- Skip any controls marked as `NATIVE_XAML`
-
-### Step 2: Robust Skill Discovery & API Verification (MANDATORY for EACH Control)
-
-**For every single control skill identified in Step 1, verify the API and implementation details before writing any code.**
-
-1. **Locate `SKILL.md` (Recursive Search)**: Search for the control skill definition in these locations (in order):
-   - `.codestudio/skills/<skill-name>/`
-   - `.agent/skills/<skill-name>/`
-   - `.agents/skills/<skill-name>/`
-   - `.github/skills/<skill-name>/`
-   - `skills/<skill-name>/`
-   
-2. **Verify API Support (CRITICAL)**:
-   - **DO NOT assume property names.** Read the `SKILL.md` or `references/` guides to check property existence.
-   - Example: Verify control properties (like mapping paths or data series types) against the authoritative skill definitions.
-   - If a property or type is documented as part of a specific assembly (e.g., Charts, Notifications, etc.), ensure the namespace and assembly match exactly.
-
-3. **Extract Authoritative Namespaces & Assemblies**:
-   - **MANDATORY**: Open the control's `SKILL.md` or `getting-started.md` and copy the **exact** `xmlns` URI and C# `using` statement.
-   - **Local Resources**: Always include the local project namespace (e.g., `xmlns:local="using:ProjectName"`) to resolve local types and views.
-   - **Common Converters**: Ensure standard XAML converters (like `StringToVisibilityConverter`, `StringFormatConverter`) are defined in the `Resources` section of the control or `App.xaml` before use.
-   - **Do NOT assume generic namespaces.** Many controls use specialized sub-namespaces (e.g., `Syncfusion.UI.Xaml.DataGrid` for DataGrid, `Syncfusion.UI.Xaml.Charts` for Chart).
-   - Verify if the namespace requires a specific suffix (e.g., `.DataGrid` vs `.Grid`).
-   - XAML Example: `xmlns:grid="using:Syncfusion.UI.Xaml.DataGrid"` ✅
-   - Identify the specific NuGet package name required for the control.
-
-### Step 3: Virtual Build & API Validation (Static Analysis)
-
-Since WinUI build commands may not be available in all terminal environments, you MUST perform **Static API Verification**:
-- **Cross-Reference**: Compare the proposed control usage against the `SKILL.md` API list AND the **`scripts/controls.csv`** file.
-- **Fail Early**: If a requested feature (e.g., `SfLinearProgressBar`) is not found in `scripts/controls.csv`, report it immediately as a missing dependency or unsupported Syncfusion control. Use a `NATIVE_XAML` equivalent (e.g., `<ProgressBar />`) instead.
-- **Self-Correction**: If you find an error in namespace or property names during your internal review (Stage 6), revert and re-read the control skill specifically for that API signature.
-
-### Step 4: NOW Generate Code Using Extracted Information
-
-Only after completing Steps 1-5, generate the .xaml/.xaml.cs file using the exact imports and styles extracted from control skills.
-
-**Common Mistake to Avoid:**
-❌ Guessing property names like `DisplayMemberPath` without checking if the control (e.g., `SfTreeView`) supports it.
-❌ Using generic namespaces like `Syncfusion.UI.Xaml` when specialized ones like `Syncfusion.UI.Xaml.ProgressBar` are required.
-✅ Read the skill documentation FIRST to verify property availability and namespace accuracy.
-
-**Why This Order Is Critical:**
-- Prevents "Type not found" errors by ensuring correct assembly references.
-- Prevents "Undefined namespace" errors by using authoritative `using:` URIs.
-- Prevents "Property not found" errors by verifying API support before implementation.
-- Ensures compatibility with the specific version of Syncfusion WinUI controls in use.
+⛔ **CRITICAL: Read Stage 4 outputs FIRST. No file may be written until all pre-validation gates below pass.**
 
 ---
 
-## Code Generation Process
+## Workflow Summary
 
-**After reading all control skills, AI Should:**
-
-1. **Generate .xaml/.xaml.cs control file**:
-   - WinUI control class with dependency properties
-   - Proper Syncfusion imports and namespaces
-   - C# interface for properties
-   - Event handlers and state management
-   - Error handling and validation
-   - WCAG 2.1 AA accessibility markup (AutomationProperties, semantic structure, focus management)
-   - XML documentation comments explaining usage
-
-2. **Generate XAML styling** (based on project preference):
-   - XAML Style: ResourceDictionary with Style definitions
-   - Fluent Design: Style-based theming
-   - Inline: Direct property binding in XAML
-   - Responsive design: Desktop-first (1920px, 1366px, 1024px, 768px)
-   - Light/dark theme support if needed
-
-3. **Generate C# classes and interfaces**:
-   - Properties interface with all property types
-   - ViewModel types if using MVVM
-   - Event handler signatures
-
-4. **Reference code standards** from:
-   - winui-standards.md (accessibility + security rules)
-   - Control skill's feature-specific guides (filtering.md, validation.md, styling.md, etc.)
-
-**Code Generation Standards:**
-
-- **Project Root Constraints**: ALL files (Views, Models, ViewModels, Controls) MUST be generated INSIDE the project directory containing the `.csproj` file. NEVER create files outside the project root.
-- **File Organization (MANDATORY)**: 
-  - **View Files** → `<ProjectRoot>/Views/[ControlName]/[ControlName].xaml` and `[ControlName].xaml.cs`
-  - **Model Files** → `<ProjectRoot>/Models/[ModelName].cs`
-  - **ViewModel Files** → `<ProjectRoot>/ViewModels/[ViewModelName].cs`
-  - **Reusable Controls** → `<ProjectRoot>/Controls/[ControlName]/[ControlName].xaml` and `[ControlName].xaml.cs`
-  - **Example Path Structure**: 
-    ```
-    MyWinUIApp/                          (Project Root - contains .csproj)
-    ├── Views/
-    │   └── LoginForm/
-    │       ├── LoginForm.xaml           ✅ Inside project
-    │       └── LoginForm.xaml.cs        ✅ Inside project
-    ├── Models/
-    │   └── LoginFormModel.cs            ✅ Inside project
-    ├── ViewModels/
-    │   └── LoginFormViewModel.cs        ✅ Inside project
-    └── MyWinUIApp.csproj
-    ```
-- **Control Imports:** Use exact import syntax from control skill's getting-started.md
-  - WinUI XAML: `xmlns:syncfusion="using:Syncfusion.UI.Xaml.DataGrid"`
-  - Do NOT use WPF clr-namespace syntax
-- **Style Imports:** Include the Syncfusion built-in themes (Light/Dark) from `references/syncfusion-themes.md`
-  - **Read:** `.codestudio/skills/syncfusion-winui-ui-builder/references/syncfusion-themes.md`
-  - WinUI has 2 built-in themes (Light/Dark) that auto-apply based on Windows theme setting
-  - No separate theme packages needed (unlike WPF)
-- **Semantic XAML:** Use proper WinUI elements (`StackPanel`, `Grid`, `TextBlock`, `Button`, etc.)
-- **Accessibility:** AutomationProperties, semantic structure, AutomationProperties.HelpText, focus management (per WCAG 2.2 AA standards)
-- **C#:** No dynamic types, full type safety, INotifyPropertyChanged for ViewModel binding
-- **Error Handling:** Try-catch blocks, user-friendly error messages, input validation
-- **Responsive:** Grid/StackPanel layouts with AdaptiveTrigger for responsive breakpoints
-- **Performance:** Virtualization for large lists, async/await for data operations, event handler cleanup
-- **Security:** No reflection vulnerabilities, validate all inputs, no hardcoded secrets, parameterized data access
-- **Comments:** XML documentation on control classes, explain complex logic
-
-### ⚠️ CRITICAL: Theme Resource Initialization (REQUIRED BEFORE RUNTIME)
-
-**Problem:** Syncfusion WinUI controls require theme resources to be loaded before XAML rendering. Missing theme resources cause runtime errors like:
 ```
-Cannot find a Resource with the Name/Key BaseStyle [Line: 72 Position: 91]
+Step 1 → Read & validate control-mapping.json
+    ↓
+Step 1A → Classify each control: SYNCFUSION_VERIFIED or NATIVE_FALLBACK
+    ↓                                    ↓
+Step 2 (Syncfusion path)        Step 1B (Native fallback path)
+Skill folder + getting-started  Use native WinUI SDK controls only
+namespace, APIs, NuGet          Standard WinUI properties only
+❌ HALT if any missing          Skip Syncfusion extraction
+    ↓                                    ↓
+    └──────────────── merge ─────────────┘
+    ↓
+Step 3 → Confirm skill-extraction.json (PASS) · re-read skill file per control
+Step 4 → Confirm target framework = WinUI
+Step 5 → Validate all namespaces (5A) and properties (5B)
+    ↓
+Generate: XAML · Code-Behind · ViewModel · Service · Repository · ResourceDictionary
+    ↓
+Post-Validation: Run all 11 checks → fix failures
+    ↓
+✅ Pass to Stage 6
 ```
 
-**Solution: Add Theme Resources to App.xaml**
+---
 
-Your generated controls MUST have proper theme setup in `App.xaml`. Ensure the following is configured:
+## Pre-Validation Gates (MANDATORY — Execute in Order)
 
-**1. Syncfusion Theme Registration in App.xaml.cs:**
+### Step 0 — Read Stage 4 Design Decisions (GATES ALL STEPS) ⛔ CRITICAL
+- **Load**: Stage 4 document (MVVM mapping, color tokens, spacing grid, typography scale, startup view plan)
+- **Extract & store locally**:
+  - ✅ Startup view name: e.g., "MainWindow with MainWindowViewModel"
+  - ✅ MVVM mapping: all View → ViewModel pairs + navigation flow
+  - ✅ Color palette: Primary, Secondary, Background, Semantic colors (from Stage 4 Section 3)
+  - ✅ Spacing tokens: SpaceSmall, SpaceMedium, SpaceLarge, etc. (from Stage 4 Section 4)
+  - ✅ Typography scale: FontSizeBody, FontSizeHeading, etc. (from Stage 4 Section 4)
+- ❌ If Stage 4 document missing or incomplete → HALT: "Stage 4 not locked; cannot generate"
+- ✅ If all extracted → Proceed to Step 1
 
+### Step 1 — Validate `control-mapping.json`
+
+- Locate: `<project-root>/control-mapping.json`
+- Simple → `elements[]` present; Complex → `pages[]` with `page_id`, `component_type`, `elements`/`sections`
+- Every element must have: `id`, `name`, `type_hint`, mapped control name
+- ⛔ Missing or invalid → HALT: return to Stage 3
+
+---
+
+### Step 1A — Control Classification Gate
+
+```
+FOR EACH entry in mapped_controls[]:
+
+  IF validation == "✓ VERIFIED" AND skill != null AND score >= 2
+  → SYNCFUSION_VERIFIED: proceed to Step 2
+
+  IF control == "NATIVE_XAML" OR validation == "✗ FALLBACK"
+  OR validation == "✗ NO_MATCH" OR skill == null OR score < 2
+  → NATIVE_FALLBACK: proceed to Step 1B
+  → Log: "⚠️ Fallback: <element_name> → native WinUI control"
+```
+
+---
+
+### Step 1B — Native Fallback (NATIVE_FALLBACK controls only)
+
+| Intent | Native WinUI Control | Key Properties |
+|--------|---------------------|----------------|
+| Text input | `TextBox` | `Text`, `PlaceholderText`, `Header`, `IsReadOnly` |
+| Password | `PasswordBox` | `Password`, `PlaceholderText`, `PasswordRevealMode` |
+| Dropdown | `ComboBox` | `Items`, `SelectedItem`, `PlaceholderText` |
+| Button | `Button` | `Content`, `Command`, `IsEnabled` |
+| Checkbox | `CheckBox` | `Content`, `IsChecked`, `IsEnabled` |
+| Toggle | `ToggleSwitch` | `Header`, `IsOn`, `OnContent`, `OffContent` |
+| Date | `CalendarDatePicker` | `Date`, `Header`, `MinDate`, `MaxDate` |
+| Number | `NumberBox` | `Value`, `Minimum`, `Maximum`, `PlaceholderText` |
+
+**Rules:**
+- ✅ Use standard WinUI SDK properties only — no Syncfusion namespaces or properties
+- ✅ Allowed: no valid Syncfusion mapping (✗ NO_MATCH), score < 2, skill file missing
+- ❌ Not allowed: valid Syncfusion control exists → fix properties instead of falling back
+
+---
+
+### Step 2 — Atomic Skill Validation (SYNCFUSION_VERIFIED controls only)
+
+```
+FOR EACH SYNCFUSION_VERIFIED control:
+  1. LOCATE skill folder: <skills-root>/syncfusion-winui-<control-name>/
+     ❌ Not found → HALT: "Skill folder missing for <control-name>"
+  2. READ <skill-folder>/references/getting-started.md
+     ❌ Not found → HALT: "getting-started.md missing for <control-name>"
+  3. EXTRACT namespace → ❌ absent → HALT: "Namespace undefined for <control-name>"
+  4. EXTRACT + VERIFY properties, events, methods
+     ❌ API not listed → HALT: "Unverified API for <control-name>"
+  5. EXTRACT NuGet package + version
+     ❌ Not listed → HALT: "Unknown package for <control-name>"
+     ❌ Version mismatch → HALT: "Version conflict for <control-name>"
+  6. IF advanced features needed: READ SKILL.md + relevant feature guide
+     ❌ Not found → HALT: "Feature guide missing"
+
+ANY failure → HALT entire generation; report all failed controls.
+```
+
+> **Skill files are the single source of truth. No code may be generated from memory, assumption, or inference.**
+
+---
+
+### Step 2B — XAML Pre-Generation Dry-Run Validation (NEW) ⛔ CRITICAL
+**Before writing ANY XAML file:**
+```
+FOR EACH planned XAML structure:
+  · Simulate namespace parsing (no duplicates, all from skill-extraction.json or WinUI base)
+  · Simulate resource key resolution: every {StaticResource X} must be defined in some ResourceDictionary
+  · Simulate control property assignments: every property valid for element type
+  · Simulate binding resolution: {x:Bind Y} — Y exists in ViewModel or code-behind
+```
+- ✅ Parse succeeds → Proceed to Step 3
+- ❌ Parse fails → Report error; HALT; do NOT generate
+
+### Step 3 — PRE-GENERATION SKILL VALIDATION (BLOCKING) ⛔ CRITICAL
+
+**This step MUST complete successfully BEFORE ANY code file is written.**
+
+```
+CONFIRM skill-extraction.json exists at <project-root>/
+  ❌ Missing → HALT: "skill-extraction.json not found — run Stage 5B first"
+
+CONFIRM validation_status == "PASS"
+  ❌ Not PASS → HALT: "Extraction not validated — re-run Stage 5B"
+
+FOR EACH Syncfusion control in control-mapping.json (BEFORE generating ANY file):
+  1. FIND entry in skill-extraction.json → controls[] where control == "<ControlName>"
+     ❌ Not found → HALT: "Do NOT invent <ControlName> — add to mapping and re-run Stage 5B"
+
+  2. RE-READ skill file listed in controls[].sources_read[0]
+     ❌ Unreadable → HALT: "Skill reference unreadable for <ControlName>"
+
+  3. EXTRACT and VERIFY (from re-read skill file):
+     ✅ Namespace: exactly matches controls[].namespace
+     ✅ All properties used in control-mapping.json exist in controls[].valid_properties[]
+     ✅ All events used exist in controls[].valid_events[]
+     ✅ All methods used exist in controls[].valid_methods[]
+     ✅ NuGet package: controls[].nuget_package + version exact
+     ❌ ANY mismatch → HALT: "API mismatch — <PropertyName> not found in skill file for <ControlName>"
+
+  4. BUILD a verified API registry (in memory):
+     {
+       "<ControlName>": {
+         "namespace": "<verified_from_skill>",
+         "verified_properties": [ ... ],
+         "verified_events": [ ... ],
+         "verified_methods": [ ... ],
+         "nuget_package": "<verified>"
+       }
+     }
+
+✅ ALL controls verified → Registry complete → Proceed to Step 4 code generation
+❌ ANY control fails → HALT; do NOT write ANY file
+```
+
+**Critical Rule:** No code may reference ANY API not in this registry. If API not found in skill file, it does NOT exist — add to control-mapping.json and re-run Stage 5B.
+
+---
+
+### Step 3A — Read `skill-extraction.json` + Skill Files (Validation Gate)
+
+```
+USE verified API registry from Step 3 (above) to validate all generated code.
+
+FOR EACH Syncfusion control in any generated file:
+  CROSS-CHECK against verified registry:
+  · namespace   → exact controls[].namespace (never modify or construct)
+  · properties  → only names in controls[].valid_properties[].name
+  · events      → only names in controls[].valid_events[].name
+  · methods     → only names in controls[].valid_methods[].name
+  · nuget       → controls[].nuget_package at controls[].nuget_version
+
+✅ All cross-checks pass → safe to generate
+❌ ANY cross-check fails → code generation BLOCKED; report failure
+```
+
+---
+
+### Step 4 — Detect Target Framework (BLOCKING)
+
+```
+READ Stage 2 → target_framework, platform, dotnet_version
+
+❌ target_framework empty/null → HALT: "Target SDK unknown — re-run Stage 2"
+❌ platform ≠ WinUI           → HALT: "Platform is not WinUI"
+❌ framework contains 'wpf', 'maui', 'uwp', 'android' → HALT: "Non-WinUI framework detected"
+
+LOCK:
+✅ WinUI base namespace: "http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+✅ Syncfusion namespaces: from skill-extraction.json → controls[].namespace only
+```
+
+---
+
+### Step 5 — Namespace & Property Compatibility (BLOCKING)
+
+#### 5A — Namespace Validation
+```
+FOR EACH xmlns in planned XAML:
+  ✅ Default xmlns MUST be: xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  ✅ Syncfusion xmlns MUST come from: skill-extraction.json → controls[].namespace
+  ✅ Format: xmlns:sf="using:Syncfusion.UI.Xaml.<ControlNamespace>"
+  ❌ 'clr-namespace', 'assembly=', 'schemas.syncfusion.com/wpf' → HALT: "WPF namespace in WinUI file"
+  ❌ Namespace not in WinUI base set AND not in skill-extraction.json → HALT: "Unverified namespace"
+```
+
+#### 5B — Property Validation
+```
+FOR EACH property on any WinUI/Syncfusion control:
+
+  CHECK 1 — WPF blocked properties (HALT if found):
+  · {Binding} → use {x:Bind}
+  · DockPanel → use Grid or RelativePanel
+  · WrapPanel → use ItemsWrapGrid
+  · Triggers/DataTrigger → use VisualStateManager
+  · System.Windows.* types → use Microsoft.UI.Xaml.*
+  · clr-namespace/assembly= xmlns → use using: form
+
+  CHECK 2 — Element-level support:
+  · Padding   ✅ Control subclasses, Border  ❌ Grid, StackPanel, Canvas
+  · CornerRadius ✅ Border, Control          ❌ Grid, StackPanel
+  · Background ✅ Panel, Control, Border     ❌ Plain UIElement/FrameworkElement
+  ❌ Property not declared on element → HALT: "Property does not exist on <ElementType> in WinUI SDK"
+
+  CHECK 3 — Syncfusion property:
+  ❌ Property not in skill-extraction.json → valid_properties[].name → HALT: "Property not verified in skill file"
+```
+
+**Quick-fix reference:**
+
+| Error | Fix |
+|-------|-----|
+| `Padding` on `Grid`/`StackPanel` | Wrap in `Border` with `Padding` or use `Margin` on children |
+| `CornerRadius` on `Grid` | Wrap in `Border` with `CornerRadius` |
+| `{Binding}` in XAML | Replace with `{x:Bind}` |
+
+---
+
+## Gate Check (MANDATORY before writing any file)
+
+```
+✅ Stage 4 design decisions extracted + stored (Step 0)
+✅ XAML dry-run validation passed (Step 2B)
+✅ skill-extraction.json exists + validation_status == "PASS"
+✅ Every Syncfusion control verified against its skill file (Step 3)
+✅ No control absent from skill-extraction.json appears in output
+✅ Target framework = WinUI confirmed (Step 4)
+✅ All xmlns from skill-extraction.json only — no WPF/UWP/MAUI namespaces (Step 5A)
+✅ All properties validated against WinUI SDK + skill-extraction.json (Step 5B)
+✅ Startup View will be generated: App.xaml.cs + MainWindow pattern confirmed
+✅ MVVM mapping matches Stage 4 exactly
+✅ Design tokens (colors, spacing, fonts) from Stage 4 are available for use
+✅ ResourceDictionary merge structure planned (Themes/*.xaml in App.xaml)
+```
+
+---
+
+## Validation Registries (Build Before Code Generation)
+
+Build four registries from `skill-extraction.json`. Any `BlockingException` halts generation — no catch, no suppression.
+
+```
+validControls    = SET  { controls[].control }
+propertyRegistry = MAP  { controlName → SET { valid_properties[].name } }
+eventRegistry    = MAP  { controlName → SET { valid_events[].name } }
+namespaceRegistry= MAP  { controlName → controls[].namespace }
+
+CALL POINTS (mandatory — no exceptions):
+① Before any XAML element tag    → validateControl(className)
+② Before any Syncfusion attribute → validateProperty(className, attrName)
+③ Before any Syncfusion event     → validateEvent(className, eventName)
+④ Before any xmlns declaration    → validateNamespace(className, xmlnsValue)
+
+Any BlockingException → HALT; log full message; do NOT continue.
+```
+
+**Data source rules — absolute:**
+
+| Data | Source | ❌ Never From |
+|------|--------|---------------|
+| `xmlns:...` | `controls[].namespace` in `skill-extraction.json` | Memory or inference |
+| Properties | `controls[].valid_properties[].name` | Assumption |
+| Events | `controls[].valid_events[].name` | Guessing |
+| NuGet package/version | `controls[].nuget_package` + `nuget_version` | Any other source |
+| Control class name | `controls[].control` | Aliases or abbreviations |
+
+---
+
+## Code Generation Deliverables
+
+Generate all layers together. Never generate UI without the backend.
+
+### Folder Structure
+```
+App.xaml + App.xaml.cs  # ⛔ MANDATORY: Startup entry point with license registration
+MainWindow.xaml + MainWindow.xaml.cs  # ⛔ MANDATORY: Root window with root ViewModel DataContext
+Views/<Feature>/        # .xaml + .xaml.cs (for each planned View from Stage 4 MVVM mapping)
+ViewModels/             # INotifyPropertyChanged ViewModels (matching Stage 4 mapping)
+Services/               # Business logic
+Repositories/           # IRepository + in-memory implementation
+Models/                 # Data models and DTOs
+Themes/                 # Colors.xaml · Spacing.xaml · Typography.xaml (MUST be merged in App.xaml)
+```
+⛔ **CRITICAL**: If MainWindow.xaml or App.xaml missing → FAIL Stage 5
+
+### Deliverable 1: XAML
+- Namespaces from `skill-extraction.json` only — one prefix per namespace, no duplicates.
+- All Syncfusion xmlns: `using:Syncfusion.UI.Xaml.<ControlNamespace>` format.
+- Only controls/properties verified by the four registries.
+- All interactive controls: event/command bindings + `AutomationProperties.Name`.
+- Layout: `Grid` with `*` sizing — no hardcoded pixel widths for fluid areas.
+- App.xaml resources:
+```xaml
+<Application.Resources>
+  <ResourceDictionary>
+    <ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary Source="Themes/Colors.xaml" />
+      <ResourceDictionary Source="Themes/Spacing.xaml" />
+      <ResourceDictionary Source="Themes/Typography.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+  </ResourceDictionary>
+</Application.Resources>
+```
+
+### Deliverable 2: Code-Behind (.xaml.cs)
+- `InitializeComponent()` first; `DataContext = new <Feature>ViewModel()` immediately after.
+- All event handlers fully implemented — never empty stubs.
+- App.xaml.cs license bootstrap:
 ```csharp
-// App.xaml.cs
-using Microsoft.UI.Xaml;
-using Syncfusion.Licensing;
-
-public partial class App : Application
+protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
 {
-    public App()
-    {
-        // ✅ REQUIRED: Register Syncfusion license (use trial if no license)
-        SyncfusionLicenseProvider.RegisterLicense("YOUR_LICENSE_KEY_HERE");
-        
-        // ✅ REQUIRED: Set application theme (respects Windows preference)
-        this.RequestedTheme = ApplicationTheme.Default;
-        
-        this.InitializeComponent();
-    }
-
-    protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
-    {
-        m_window = new MainWindow();
-        m_window.Activate();
-    }
-
-    private Window m_window;
+    SyncfusionLicenseProvider.RegisterLicense(
+        Environment.GetEnvironmentVariable("SYNCFUSION_LICENSE_KEY"));
+    m_window = new MainWindow();
+    m_window.Activate();
 }
 ```
 
-**2. Resource Dictionary in App.xaml:**
+### Deliverable 3: ViewModel (.cs)
+- **Implements `INotifyPropertyChanged`**; all properties raise `OnPropertyChanged`.
+- **All commands: `RelayCommand`** with `CanExecute` + `Execute`.
+- **Root ViewModel (for MainWindow)**: implements navigation orchestration per Stage 4 flow.
+- **Feature ViewModels**: match View names from Stage 4 MVVM mapping exactly.
+- Input validation; error message property bound to XAML.
+- Calls Service layer — no inline business logic.
 
+### Deliverable 4: Service & Repository
+- Service: all business logic (e.g., `AuthService.ValidateCredentials`).
+- Repository: `IRepository` interface + in-memory implementation.
+- Navigation: success → open target Window, close current; failure → surface error via ViewModel.
+- Server-side validation independent of UI.
+
+### Deliverable 5: Navigation Bridge Registration ⛔ CRITICAL
+
+**If any generated page is not the startup view (Step 0), register it in the navigation system:**
+
+```
+FOR EACH generated View/ViewModel pair (non-startup pages only):
+  1. Create navigation command in MainWindowViewModel:
+     - RelayCommand<Type> Navigate<PageName>Command
+     - Execute: new <PageName>() → show as Window or transition
+     - Register in navigation dictionary: "PageName" → <PageName> constructor
+
+  2. IF multi-page in same window (MVVM Region pattern):
+     - Add Content property to MainWindowViewModel
+     - Binding: <ContentControl Content="{x:Bind CurrentPage}" />
+     - NavigateTo() updates CurrentPage property → raises OnPropertyChanged
+
+  3. IF separate windows (Modal/Dialog pattern):
+     - Create command to instantiate + open new window
+     - Wire navigation in command Execute() only
+     - ViewModel never directly creates windows
+
+  4. Document in navigation metadata:
+     - Page name, route, accessible from (parent page), back navigation
+
+✅ All non-startup pages registered → proceed to ResourceDictionary (Deliverable 5)
+❌ Page not registered → HALT: "Page orphaned in navigation system"
+```
+
+**Critical Rule:** Every generated page must have a path from the startup view. Orphaned pages cause runtime navigation failures.
+
+---
+
+### Deliverable 5: ResourceDictionary ⛔ MANDATORY
+Create three files using Stage 4 tokens:
 ```xaml
-<?xml version="1.0" encoding="utf-8"?>
-<Application
-    x:Class="MyApp.App"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:MyApp">
-    
-    <Application.Resources>
-        <!-- ✅ REQUIRED: Syncfusion theme resources are auto-loaded via RequestedTheme -->
-        <!-- No manual theme resource loading needed - built-in themes handle it -->
-        
-        <!-- Optional: Add custom application-level resources here -->
-        <ResourceDictionary>
-            <!-- Your custom styles and brushes -->
-        </ResourceDictionary>
-    </Application.Resources>
-</Application>
+<!-- Themes/Colors.xaml — from Stage 4 Section 3 color definitions -->
+<SolidColorBrush x:Key="PrimaryColorBrush" Color="#007ACC" />
+<SolidColorBrush x:Key="BackgroundColorBrush" Color="#FFFFFF" />
+<!-- Add all Stage 4 semantic colors here -->
+
+<!-- Themes/Spacing.xaml — from Stage 4 Section 4 spacing grid -->
+<x:Double x:Key="SpaceSmall">8</x:Double>
+<x:Double x:Key="SpaceMedium">12</x:Double>
+
+<!-- Themes/Typography.xaml — from Stage 4 Section 4 typography scale -->
+<x:Double x:Key="FontSizeBody">12</x:Double>
+<x:Double x:Key="FontSizeHeading">18</x:Double>
 ```
-
-**3. What Gets Loaded Automatically:**
-
-When you set `RequestedTheme = ApplicationTheme.Default` (or Light/Dark), Syncfusion controls automatically load:
-- ✅ `BaseStyle` resource (required by all Syncfusion controls)
-- ✅ Color palettes and brushes
-- ✅ Typography resources
-- ✅ Control-specific styles
-
-**No additional manual resource dictionary merging is required** (unlike WPF).
-
-**4. If BaseStyle Error Still Occurs:**
-
-This indicates the Syncfusion theme resources package is not installed. Ensure you have:
-- ✅ `Syncfusion.UI.Xaml.Core` NuGet package installed (provides theme resources)
-- ✅ Version matches other Syncfusion packages (e.g., all 25.1.35)
-- ✅ License registered before any Syncfusion control is rendered
-
-**Validation Checklist:**
-- [ ] `SyncfusionLicenseProvider.RegisterLicense()` called in App.xaml.cs
-- [ ] `Application.RequestedTheme` set to Light/Dark/Default
-- [ ] `Syncfusion.UI.Xaml.Core` installed via NuGet
-- [ ] All Syncfusion packages at same version
-- [ ] No custom theme resources conflicting with Syncfusion resources
-
-### Media (MANDATORY)
-
-- **Placeholder Images:** Use [Unsplash](https://unsplash.com) for high-quality placeholder images
-  - Format: `https://images.unsplash.com/photo-[id]?w=[width]&h=[height]&fit=crop`
-  - Example: `https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=200&h=100&fit=crop`
-  - Always specify dimensions (width x height) in the URL
-  - Use relevant keywords for context-appropriate images
-
-### Icon Handling (MANDATORY)
-
-**Principle:** Icons in WinUI are implemented using the native **Segoe MDL2 Assets** font family. This is the Windows platform standard.
-
-**Implementation Steps:**
-1. **Identify Semantic Need**: Look at the element description (e.g., "Save button").
-2. **Find Glyph**: Use common Segoe MDL2 glyphs:
-   - Save: `&#xE74E;`
-   - Settings: `&#xE713;`
-   - Contact/User: `&#xE77B;`
-   - Mail: `&#xE715;`
-3. **XAML Syntax**:
-   ```xaml
-   <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE715;"/>
-   ```
-
-**Fallbacks**: 
-- If a specific glyph is not known, use an appropriate emoji or a generic placeholder like `&#xE10F;` (Edit).
-- Always ensure icons are wrapped in a control that provides accessible labels (AutomationProperties.Name).
-
-### Button Sizing with Syncfusion (MANDATORY)
-
-**Principle:** Let Syncfusion own button dimensions and styling. Use XAML resources only for layout around buttons.
-
-❌ **INCORRECT** - Overriding Syncfusion button sizes with XAML margins:
+**App.xaml MUST merge all three:**
 ```xaml
-<Button x:Name="PlayButton" Margin="16" Padding="16" Height="48" Width="128">
-  <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xEA74;"/>
-  Play
-</Button>
+<ResourceDictionary.MergedDictionaries>
+  <ResourceDictionary Source="Themes/Colors.xaml" />
+  <ResourceDictionary Source="Themes/Spacing.xaml" />
+  <ResourceDictionary Source="Themes/Typography.xaml" />
+</ResourceDictionary.MergedDictionaries>
 ```
-
-✅ Correct Layout - Syncfusion owns button, XAML owns layout:
-```xaml
-<StackPanel Orientation="Horizontal" Spacing="12">
-  <syncfusion:ButtonControl x:Name="PlayButton" Content="Play" Size="Large" IsPrimary="True">
-    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xEA74;"/>
-  </syncfusion:ButtonControl>
-
-  <syncfusion:ButtonControl x:Name="InfoButton" Content="More Info" Size="Large">
-    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;"/>
-  </syncfusion:ButtonControl>
-</StackPanel>
-```
-
-**Why This Works:**
-- Syncfusion defines sizing + alignment internally
-- Icons align correctly with Syncfusion's design system
-- No margin collision or override conflicts
-- Consistent appearance across all Syncfusion controls
+❌ If any merge missing → XAML parse exception at runtime
 
 ---
 
-### Control Reuse Across UI (Same Control, Multiple Places)
+## Post-Generation Validation (MANDATORY — Fix All Before Stage 6)
 
-**Principle:** One Syncfusion control type can be reused throughout your UI with customizations. For example, `ButtonControl` can serve as the Login button, Forgot Password link, and Sign Up button—each customized via properties and styles.
+| # | Check | Fail Condition |
+|---|-------|----------------|
+| 1 | Control scope | Any control not in `skill-extraction.json → controls[]` |
+| 2 | Namespace | Namespace not from `controls[].namespace`; duplicates or constructed prefixes |
+| 3 | Property & event | Not in `valid_properties`/`valid_events`; event in XAML with no handler |
+| 4 | No empty handlers | Any event handler or command Execute is a stub |
+| 5 | DataContext | Any Window/UserControl missing `DataContext` assignment |
+| 6 | Binding resolution | `{x:Bind X}` where `X` not in ViewModel or code-behind |
+| 7 | Command resolution | `{x:Bind XCommand}` where `XCommand` not an `ICommand` |
+| 8 | Service completeness | Service method called from ViewModel but not implemented |
+| 9 | Navigation | Complex layout: success path does not open target Window |
+| 10 | Resource integrity | `{StaticResource X}` key not defined; ResourceDictionary not merged; duplicate `x:Key`; invalid ARGB |
+| 11 | Component type | `generate_window` → `Window`; `generate_usercontrol` → `UserControl` |
+| 12 | ⛔ Startup View | App.xaml.cs + MainWindow.xaml + MainWindow.xaml.cs exist; DataContext set to root ViewModel |
+| 13 | ⛔ Stage 4 MVVM Mapping | ViewModels match Stage 4 MVVM mapping exactly; navigation commands follow Stage 4 flow |
+| 14 | ⛔ Stage 4 Design Tokens | All colors use Stage 4 palette; spacing uses Stage 4 grid; fonts use Stage 4 scale |
+| 15 | ⛔ ResourceDictionary Merge | Themes/Colors.xaml, Themes/Spacing.xaml, Themes/Typography.xaml created & merged in App.xaml |
 
-**Example - Button Used in Multiple Places:**
-```xaml
-<!-- LoginForm.xaml -->
-<Grid>
-  <!-- Primary button - main CTA -->
-  <StackPanel x:Name="LoginButtonPanel" Spacing="8">
-    <syncfusion:ButtonControl x:Name="LoginButton" Content="Login" Size="Large" IsPrimary="True" Width="100%"/>
-  </StackPanel>
-
-  <!-- Flat button - link-style action -->
-  <StackPanel x:Name="ForgotPasswordPanel" Spacing="8">
-    <syncfusion:ButtonControl x:Name="ForgotPasswordButton" Content="Forgot Password?" Style="{StaticResource FlatButtonStyle}" Size="Small"/>
-  </StackPanel>
-
-  <!-- Outline button - secondary action -->
-  <StackPanel x:Name="SignUpPanel" Spacing="8">
-    <syncfusion:ButtonControl x:Name="SignUpButton" Content="Sign Up Here" IsPrimary="False" Style="{StaticResource OutlineButtonStyle}"/>
-  </StackPanel>
-</Grid>
-```
-
-```xaml
-<!-- LoginForm.xaml.cs or Resources -->
-<!-- Primary button - main CTA -->
-<Style x:Key="PrimaryButtonStyle" TargetType="syncfusion:ButtonControl">
-  <Setter Property="Width" Value="Auto"/>
-  <Setter Property="Background" Value="#0d6efd"/>
-</Style>
-
-<!-- Flat button - link-style action -->
-<Style x:Key="FlatButtonStyle" TargetType="syncfusion:ButtonControl">
-  <Setter Property="Background" Value="Transparent"/>
-  <Setter Property="BorderThickness" Value="0"/>
-  <Setter Property="Foreground" Value="#6c757d"/>
-  <Setter Property="FontSize" Value="14"/>
-</Style>
-
-<!-- Outline button - secondary action -->
-<Style x:Key="OutlineButtonStyle" TargetType="syncfusion:ButtonControl">
-  <Setter Property="Background" Value="Transparent"/>
-  <Setter Property="BorderBrush" Value="#6c757d"/>
-  <Setter Property="Foreground" Value="#6c757d"/>
-</Style>
-```
+⛔ **Failure on ANY check → HALT; fix before Stage 6. CRITICAL: Checks 12-15 are new gates.**
 
 ---
 
-### Reading Control Skills BEFORE Using generate code (MANDATORY)
+## MANDATORY Rules
 
-**CRITICAL:** Do NOT assume control properties or APIs.
-
-**Required Process:**
-1. **Identify all mapped controls** from Stage 3 output
-   - E.g., GridControl, ChartControl, SidebarControl, etc.
-
-2. **For EACH control**, read the control skill:
-   - Location: `.codestudio/skills/<control-skill>/references/getting-started.md`
-   - Extract: imports, style imports, required properties, setup code
-   - Read: feature-specific guides (filtering, sorting, validation, styling, etc.)
-
-3. **DO NOT generate code without reading** control skill documentation
-   - Don't assume property names or API structure
-   - Don't guess at event handler names
-   - Don't skip required setup or initialization
-
-**Example - Reading GridControl Skill:**
-```
-Before generating code:
-1. Read: .codestudio/skills/syncfusion-winui-grid/references/getting-started.md
-   → Extract: using Syncfusion.UI.Xaml.Grids;
-   → Read: required properties, ItemsSource structure, column definitions
-
-2. Read: .codestudio/skills/syncfusion-winui-grid/references/sorting.md
-   → Understand: AllowSorting property, SortColumnDescriptions structure
-
-3. Read: .codestudio/skills/syncfusion-winui-grid/references/filtering.md
-   → Understand: AllowFiltering property, FilterPredicates structure
-
-4. NOW generate code with correct imports, properties, and API calls
-```
-
-**What Control Skills Contain:**
-- ✅ Authoritative import statements
-- ✅ Complete API documentation
-- ✅ Feature-specific patterns (sorting, filtering, validation)
-- ✅ Best practices and performance considerations
-- ✅ Accessibility requirements
-- ✅ Theme customization options
-
-**Common Mistakes to Avoid:**
-- ❌ Guessing property names → Read skill documentation
-- ❌ Missing style imports → Extract from getting-started.md
-- ❌ Wrong event handler names → Copy from control skill examples
-- ❌ Incomplete setup code → Follow skill's recommended initialization
+| Rule | Enforcement |
+|------|-------------|
+| Never guess a control name | HALT — read skill file first |
+| Never guess a property/event | HALT — validate against `valid_properties[]` / `valid_events[]` |
+| Properties only from code blocks in skill file | REJECT if from plain text |
+| `skill-extraction.json` must exist and PASS | HALT if missing or status ≠ PASS |
+| Syncfusion namespace from skill file only | HALT if constructed or guessed |
+| No WPF-style namespaces (`clr-namespace`, `assembly=`) | HALT if detected |
+| Never generate UI without backend | Generate all layers together |
+| No business logic in code-behind | Move to ViewModel/Service |
 
 ---
 
-**Example Output Files:**
+## DO ✅ / DON'T ❌
 
-```
-controls/LoginForm/
-  ├── LoginForm.xaml             (XAML control)
-  ├── LoginForm.xaml.cs          (Code-behind)
-  └── LoginForm.cs               (ViewModel export)
-```
+**DO:**
+- ✅ **Read Stage 4 design decisions FIRST** (Step 0) — extract tokens before any code generation.
+- ✅ **Generate MainWindow.xaml + App.xaml.cs** — startup view is MANDATORY, not optional.
+- ✅ **Use Stage 4 tokens**: `{StaticResource PrimaryColorBrush}` not `#007ACC`; `{StaticResource SpaceLarge}` not `16`.
+- ✅ **Create & merge Themes/Colors.xaml, Themes/Spacing.xaml, Themes/Typography.xaml** in App.xaml.
+- ✅ **Match Stage 4 MVVM mapping exactly** — View → ViewModel pairs, navigation flow.
+- ✅ Read skill file before referencing any control, property, event, or namespace.
+- ✅ Build all four registries before writing any file.
+- ✅ Use `{x:Bind}` for all bindings.
+- ✅ Generate UI + backend together as one cohesive feature.
 
----
-
-**Control Structure for Complex UIs:**
-
-For UIs with multiple distinct sections of a Window/Page (e.g., Header, Sidebar, Main Content, Footer), split into separate Views and ViewModels per section. Each section gets its own folder with its `.xaml`, `.xaml.cs`, and `.cs` ViewModel. **Each section folder MUST implement the appropriate Syncfusion WPF controls for that section** — do not mix section responsibilities. Create a parent Window that composes these section Views. Do not collapse multiple distinct UI sections into a single file.
-
-**Example Output Files (Complex UI):**
-
-```
-Controls/Dashboard/
-├── Views/
-│   ├── DashboardWindow.xaml          # Parent window composing all sections
-│   ├── DashboardWindow.xaml.cs
-│   ├── DashboardViewModel.cs         # Parent ViewModel coordinating sections
-│   ├── Header/
-│   │   ├── HeaderView.xaml           # Implement using Syncfusion AppBar
-│   │   ├── HeaderView.xaml.cs
-│   │   └── HeaderViewModel.cs
-│   ├── Sidebar/
-│   │   ├── SidebarView.xaml          # Implement using Syncfusion NavigationView
-│   │   ├── SidebarView.xaml.cs
-│   │   └── SidebarViewModel.cs
-│   ├── MainContent/
-│   │   ├── MainContentView.xaml      # Implement using Grid, Chart, Cards, etc.
-│   │   ├── MainContentView.xaml.cs
-│   │   └── MainContentViewModel.cs
-│   └── Footer/
-│       ├── FooterView.xaml           # Implement navigation links, copyright
-│       ├── FooterView.xaml.cs
-│       └── FooterViewModel.cs
-└── Resources/
-    └── DashboardStyles.xaml          # Shared styles for dashboard sections
-```
-
-**WinUI Adaptation:**
-- **Views/** folder contains all UserControl-based section Views
-- **Resources/** folder contains shared ResourceDictionary files
-- Each section has its own ViewModel following MVVM pattern
-- Parent Window composes sections using `<local:HeaderView />` syntax
-- Syncfusion WinUI controls loaded via App.xaml MergedDictionaries
+**DON'T:**
+- ❌ **Skip Step 0** — Stage 4 decisions MUST be read before generation.
+- ❌ **Omit MainWindow.xaml or App.xaml.cs** — application will open empty window.
+- ❌ **Hardcode colors/spacing** — use Stage 4 tokens via `{StaticResource}`.
+- ❌ **Skip ResourceDictionary merge** — XAML parse exception at runtime if not merged.
+- ❌ Guess or assume any control name, namespace, property, or method.
+- ❌ Use `{Binding}`, `DockPanel`, `WrapPanel`, `Triggers`, or `System.Windows.*`.
+- ❌ Leave any event handler or command Execute as an empty stub.
+- ❌ Generate code before all pre-validation steps pass.
 
 ---
 
----
+## Code Generation Standards
 
-## Syncfusion Control and Theme Package Installation
-
-**CRITICAL:** After code generation completes, you MUST install all Syncfusion control and theme packages that were used in the generated code. Use MSBuild as the primary method for package restoration and project updates.
-
-### PRIORITY 1: MSBuild (Primary Method)
-Use the MSBuild path discovered in the [MANDATORY Build Error Resolution Protocol](../../../agents/syncfusion-winui-ui-builder.agent.md#priority-1-msbuild-compiler-vs2026--vs2022---primary-build-system).
-
-1. **Add Package Reference**: Manually add the `<PackageReference />` to your `.csproj`:
-   ```xml
-   <PackageReference Include="Syncfusion.UI.Xaml.Grid" Version="[version]" />
-   ```
-2. **Restore using MSBuild**:
-   ```bash
-   & $msbuild YourProject.csproj /t:Restore /p:Configuration=Debug /p:Platform=x64 /v:minimal
-   ```
-
-### PRIORITY 2: dotnet CLI (Fallback)
-If MSBuild is unavailable, use the following `dotnet add package` commands:
-
-```bash
-dotnet add package Syncfusion.UI.Xaml.Grid --version [version]
-dotnet add package Syncfusion.UI.Xaml.Charts --version [version]
-dotnet add package Syncfusion.UI.Xaml.Buttons --version [version]
-dotnet add package Syncfusion.UI.Xaml.Themes.Fluent --version [version]
-```
-
-**Without installing these packages, the generated code will fail to render.**
-
-## Control Integration & File Mapping
-
-**Generated files MUST be wired to display in the app:**
-
-1. **Code-Behind Registration** (`controls/LoginForm/LoginForm.xaml.cs`):
-   ```csharp
-   public partial class LoginForm : UserControl
-   {
-     public LoginForm()
-     {
-       this.InitializeComponent();
-     }
-   }
-   ```
-
-2. **Import in MainWindow.xaml**:
-   ```xaml
-   <Window
-     xmlns:local="using:YourApp.Controls">
-     <Grid>
-       <local:LoginForm />
-     </Grid>
-   </Window>
-   ```
-
-3. **Ensure XAML namespaces are loaded**:
-   - If no framework/greenfield styles: Automatically imported in control
-   - If Fluent Design: Styles applied directly
-   - If Syncfusion theme: Already imported at app entry point (Stage 4)
-
-**Without this mapping, control won't render in sample.**
-
-**User Interaction:** 
-Optional review of generated code. No blocking confirmation.
-
-**Status:** AI generates without user decision. User can review/adjust if needed.
+| Standard | Rule |
+|----------|------|
+| Syncfusion APIs | Only from `skill-extraction.json → valid_properties/events/methods` |
+| Native APIs | WinUI SDK properties only (no Syncfusion props on native controls) |
+| NuGet packages | Only from `skill-extraction.json → nuget_package + nuget_version` |
+| Fallback safety | Native fallback only when score < 2 or ✗ NO_MATCH |
+| MVVM | Business logic → Service; coordination → ViewModel; UI-only → code-behind |
+| Accessibility | `AutomationProperties.Name` + `HelpText`; min 44×44 DIP touch target |
+| Bindings | `{x:Bind Prop, Mode=TwoWay}` for inputs; `{x:Bind Prop, Mode=OneWay}` for display |
+| Responsive | `Grid` with `*` sizing; never hardcode fluid column widths |
+| Performance | Virtualization on `SfDataGrid` for large lists; `async/await` for I/O |
+| Security | No hardcoded credentials or secrets in XAML or code-behind |
