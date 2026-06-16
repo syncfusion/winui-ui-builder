@@ -1,306 +1,429 @@
-# Stage 7: Validation
+# Stage 7: Final Validation
 
-**Purpose:** Validate generated code against desktop standards. Binary pass/fail result.
+**Purpose:** Two-phase gate before Stage 8 (Code Insertion):
+1. **Pre-Compilation Validation** — validates generated code against skill files, WinUI SDK, and project structure *before* MSBuild
+2. **Post-Build Quality Validation** — validates accessibility, security, performance, and Syncfusion integration *after* a clean build
 
-## Validation Checklist
+**Input:** All files from Stage 5 + `skill-extraction.json`
+**Output:** PASS ✓ / FAIL ✗ per check + overall result
 
-1. **WCAG 2.1 AA Accessibility:**
-   - Semantic XAML structure (StackPanel, Grid, Button)
-   - AutomationProperties on form fields
-   - Keyboard navigation (tab order, focus management)
-   - Color contrast ≥ 4.5:1 for text
-   - Focus indicators on interactive controls
+⛔ **Phase 1 must pass before MSBuild. Phase 2 runs only after build succeeds.**
 
-2. **Security:**
-   - No dynamic XAML parsing or injection vulnerabilities
-   - No hardcoded secrets/API keys
-   - Input sanitized where applicable
-   - No unsafe reflection
+---
 
-3. **Performance:**
-   - Virtualization for list controls
-   - Optimized control refreshes
-   - Lazy loading implemented
-   - Code optimized
+## MANDATORY EXECUTION ORDER
 
-4. **Responsive Design:**
-   - Desktop-first approach (1920px down)
-   - DockPanel/Grid layouts
-   - Adaptive breakpoints
-   - Touch targets ≥ 44x44px
-
-5. **XAML Property Validation (CRITICAL):**
-   - No WPF-only properties (LabelFormat, DisplayFormat)
-   - All properties valid for WinUI
-   - Correct namespaces and versions
-   - Templates used instead of format strings
-
-6. **Theme Resource Initialization (CRITICAL):**
-   - `SyncfusionLicenseProvider.RegisterLicense()` in App constructor
-   - `RequestedTheme` set in App.xaml.cs (not in control XAML)
-   - Application.Resources properly structured
-   - `Syncfusion.UI.Xaml.Core` installed
-   - All Syncfusion packages match version (e.g., 25.1.35)
-
-7. **Resource Dictionary Validation (CRITICAL):**
-   - All `.xaml` resource files merged into `Application.Resources` in App.xaml
-   - Merge format: `<ResourceDictionary.MergedDictionaries>`
-   - Namespace URIs correctly mapped (e.g., `using:Namespace`)
-   - No circular resource dependencies
-   - Resource keys unique and not overwritten
-   - Syncfusion theme resources loaded before custom controls
-
-8. **Window/Page Navigation Validation (CRITICAL):**
-   - App.xaml.cs configures correct startup window (not default MainPage)
-   - `Window.Activate()` called to display window
-   - Content control explicitly set (not relying on default navigation)
-   - **MANDATORY**: `RootFrame.Navigate(typeof(NewPage))` must be implemented in the startup logic (typically in `OnLaunched`) to route to the generated UI, ensuring it doesn't default to the boilerplate `MainPage`.
-   - No blank windows (verify content renders in IDE preview)
-   - Navigation logic routes to intended page, not default MainPage
-   - App.xaml `StartupUri` matches intended window class
-
-9. **Navigation Implementation Verification (CHECK):**
-   - Verify `App.xaml.cs` has been updated to initialize the root frame
-   - Verify `Frame.Navigate` is called with the correct `Type` of the generated section/page
-   - Verify `Window.Content` is set to the Frame instance
-   - Ensure the generated page has a parameterless constructor for the navigation system to use
-
-10. **Runtime Resource Resolution (CRITICAL):**
-   - Load Syncfusion theme resources in `App.xaml` before custom controls
-   - Register all value converters in resource dictionary at application startup
-   - Merge ResourceDictionary files using `<ResourceDictionary.MergedDictionaries>` in correct load order
-   - Match XAML namespace URIs to assembly namespaces exactly (e.g., `xmlns:local="using:YourNamespace"`)
-   - Ensure resource keys are unique across all dictionaries
-   - Validate resource resolution at startup
-   
-   **Best Practices:**
-   - Place Syncfusion theme dictionary first in MergedDictionaries to prevent key conflicts
-   - Define all custom converters in resource dictionary, not code-behind only
-   - Use exact namespace URIs to prevent resolution failures (typos in `using:` or `clr-namespace:` break lookups)
-   - Consolidate duplicate resource keys into single definitions
-   - Test application startup to confirm all resources load successfully
-
-## MSBuild Compilation & Error Detection
-
-**Why Use MSBuild Over dotnet build:**
-- Direct XamlCompiler error reporting with file/line numbers
-- Displays specific errors instead of generic `MSB3073` wrapper
-- Superior for WinUI XAML validation
-- Native Visual Studio integration
-
-**MSB3073 Error:** When XamlCompiler detects XAML property errors, it exits with code 1, which gets wrapped as generic `MSB3073` error. MSBuild provides direct access to the actual error details.
-
-### Identify MSBuild Path
-
-Priority order: VS2026 (v18) → VS2022 → Search standard paths → Environment PATH → Recursive search
-
-```powershell
-$msbuild = $null
-
-# Define search paths in priority order
-$searchPaths = @(
-  # VS2026 (.NET 10) - Primary
-  "C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe",
-  
-  # VS2022 (.NET 8/9) - Secondary
-  "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
-  
-  # VS2019 (.NET Framework) - Tertiary fallback
-  "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-  "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
-)
-
-# Search for MSBuild in standard paths
-foreach ($path in $searchPaths) {
-  if (Test-Path $path) {
-    $msbuild = $path
-    Write-Host "✓ Found MSBuild at: $msbuild" -ForegroundColor Green
-    break
-  }
-}
-
-# If not found in standard paths, search environment PATH
-if (!$msbuild) {
-  $msbuildFromPath = Get-Command MSBuild.exe -ErrorAction SilentlyContinue
-  if ($msbuildFromPath) {
-    $msbuild = $msbuildFromPath.Source
-    Write-Host "✓ Found MSBuild in PATH: $msbuild" -ForegroundColor Green
-  }
-}
-
-# If still not found, search Program Files recursively
-if (!$msbuild) {
-  Write-Host "⚠ MSBuild not found in standard locations. Searching Program Files..." -ForegroundColor Yellow
-  $msbuild = Get-ChildItem -Path "C:\Program Files*" -Filter "MSBuild.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-  if ($msbuild) {
-    Write-Host "✓ Found MSBuild via recursive search: $msbuild" -ForegroundColor Green
-  }
-}
-
-# Final check: if still not found, error
-if (!$msbuild) {
-  Write-Host "❌ MSBuild not found. Please install Visual Studio 2022 or later." -ForegroundColor Red
-  exit 1
-}
+```
+┌─────────────────────────────────────────────────────────────┐
+│ GATE 1: Pre-Check 0 — Startup View Config                   │
+│    → FAIL: HALT — no other checks proceed                   │
+├─────────────────────────────────────────────────────────────┤
+│ GATE 2: Pre-Checks 1–6 — Code Validation                    │
+│    → Pre-Check 1: skill-extraction.json PASS + re-read      │
+│      skill files → validate controls/properties/events      │
+│      FAIL: "Invalid API usage" → HALT, MSBuild NOT invoked  │
+│    → Pre-Checks 2–6: WinUI SDK, XAML, Runtime, NuGet, MVVM │
+│      ANY FAIL → HALT                                        │
+├─────────────────────────────────────────────────────────────┤
+│ GATE 3: MSBuild Compilation (VS2026/VS2022 ONLY)            │
+│    → ❌ NEVER: dotnet build                                  │
+│    → ✅ ALWAYS: MSBuild <solution>.sln                       │
+│    → BUILD FAILS → re-read skill file → fix → retry        │
+│    → BUILD PASS → Phase 2                                   │
+├─────────────────────────────────────────────────────────────┤
+│ GATE 4: Post-Build Quality Validation                       │
+│    → WCAG, Security, Performance, Resources, Runtime Safety │
+│    → FAIL: block Stage 8 · PASS: proceed to Stage 8        │
+└─────────────────────────────────────────────────────────────┘
+• Do NOT skip any gate · Do NOT use dotnet build — MSBuild ONLY
 ```
 
-### Compile with MSBuild
+---
+
+## Phase 1: Pre-Compilation Validation
+
+> Refer to `Build.md` for pseudocode, property tables, and auto-fix details.
+
+---
+
+### Pre-Check 0: Startup View Configuration ⛔ GATES ALL CHECKS
+
+```
+1. App.xaml.cs exists
+   ❌ → HALT: "App.xaml.cs not found"
+2. OnLaunched() present and implemented
+   ❌ → HALT: "OnLaunched() missing in App.xaml.cs"
+3. Startup window defined: new MainWindow() / new StartupWindow() / new <Name>()
+   ❌ → HALT: "No startup window in OnLaunched()"
+4. window.Activate() called
+   ❌ → HALT: "window.Activate() missing"
+5. Window class inherits Microsoft.UI.Xaml.Window
+   ❌ → HALT: "Startup window must inherit from Microsoft.UI.Xaml.Window"
+6. IF Syncfusion controls used: SyncfusionLicenseProvider.RegisterLicense() BEFORE window init
+   ❌ → HALT: "License not registered before window initialization"
+7. Startup window .xaml exists and is valid
+   ❌ → HALT: "<WindowName>.xaml not found or invalid"
+8. IF MVVM: DataContext set in code-behind
+   ❌ → HALT: "DataContext not set — bindings will fail"
+✅ PASS → proceed · ❌ FAIL → HALT, fix before any other check
+```
+
+---
+
+### Pre-Check 1: Skill-Based API Validation ⛔ CRITICAL
+
+#### 1A — Validate `skill-extraction.json`
+```
+CONFIRM file exists at <project-root>/skill-extraction.json
+  ❌ → HALT: "skill-extraction.json not found — re-run Stage 5B"
+CONFIRM validation_status == "PASS"
+  ❌ → HALT: "skill-extraction.json not validated — re-run Stage 5B"
+```
+
+#### 1B — Re-read each skill file
+```
+FOR EACH control in skill-extraction.json → controls[]:
+  READ sources_read[0] (getting-started.md) + all advanced_features_read[] files
+  ❌ Unreadable → HALT: "Skill file unreadable for <ControlName> — re-run Stage 5B"
+```
+
+#### 1C — Validate generated files against skill data
+```
+FOR EACH Syncfusion control in .xaml / .cs files:
+  1. FIND in skill-extraction.json → controls[]
+     ❌ → FAIL: "Invalid API usage — <ControlName> not in skill-extraction.json"
+  2. Namespace matches controls[].namespace exactly
+     ❌ → FAIL: "Namespace mismatch — Used: <x> | Expected: <y>"
+  3. Every property in controls[].valid_properties[].name
+     ❌ → FAIL: "Invalid API usage — '<propName>' not in skill docs for <ControlName>"
+  4. Every event in controls[].valid_events[].name
+     ❌ → FAIL: "Invalid API usage — '<eventName>' not in skill docs"
+  5. Every method in controls[].valid_methods[].name
+     ❌ → FAIL: "Invalid API usage — '<methodName>' not verified in skill file"
+ANY failure → HALT: "Validation incomplete — cannot compile. Fix all skill errors first."
+ALL pass → ✅ Skill validation complete — pre-build gate cleared
+```
+
+---
+
+### Pre-Check 2: WinUI SDK Compliance
+
+**Blocked WPF properties (HALT if found):**
+
+| Property / API | WinUI Alternative |
+|---|---|
+| `{Binding}` classic | `{x:Bind}` |
+| `DockPanel` | `Grid` or `RelativePanel` |
+| `WrapPanel` | `ItemsWrapGrid` |
+| `ContextMenu` | `MenuFlyout` |
+| `System.Windows.*` | `Microsoft.UI.Xaml.*` |
+| `Triggers` / `DataTrigger` | `VisualStateManager` |
+
+**Element-level violations (HALT if found):**
+
+| Property | ✅ Supported On | ❌ Not Supported On |
+|---|---|---|
+| `Padding` | `Control`, `Border` | `Grid`, `StackPanel`, `Canvas` |
+| `CornerRadius` | `Border`, `Control` | `Grid`, `StackPanel` |
+| `Background` | `Panel`, `Control`, `Border` | Plain `UIElement`/`FrameworkElement` |
+| `Content` | `ContentControl` subclasses | `Panel`, `TextBlock`, `Image` |
+| `Text` | `TextBox`, `TextBlock` | `Button`, `Border`, `Grid` |
+| `IsChecked` | `ToggleButton` subclasses | `Button`, non-ToggleButton |
+| `Orientation` | `StackPanel` | `Grid`, `Canvas` |
+
+```
+IF blocked property found → HALT: "Property '<n>' not valid in WinUI SDK — File: <f>, Line: <l>"
+IF property not in element's class hierarchy → HALT: "Property '<n>' does not exist on '<ElementType>'"
+```
+
+---
+
+### Pre-Check 3: XAML Structural Validation
+
+```
+FOR EACH .xaml file — simulate XamlReader.Load() (dry-run):
+  · Tag mismatch       → HALT: "XAML tag mismatch in <file> at line <n>"
+  · Invalid XML        → HALT: "Invalid XAML in <file>: <message>"
+  · Wrong base xmlns   → HALT: "Missing xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'"
+  · WPF/UWP namespace  → HALT: "Non-WinUI namespace '<ns>' — mixed framework not allowed"
+
+Auto-fix loop (max 3 attempts):
+  Fixable error → apply fix → retry
+  Cascading errors → HALT: "Cascading XAML errors — manual review required"
+  3 attempts exhausted → HALT: "XAML parse failed — return to Stage 5"
+```
+
+---
+
+### Pre-Check 4: Runtime Error Prevention ⛔ NEW
+
+Scan all generated code for patterns that compile but fail at runtime:
+
+```
+XAML Runtime Checks:
+  · {StaticResource X} key not in any merged ResourceDictionary
+    → HALT: "StaticResource '<X>' undefined — XamlParseException at runtime"
+  · {ThemeResource X} not resolvable by WinUI theme system
+    → HALT: "ThemeResource '<X>' undefined — will fail at runtime"
+  · Converter referenced in XAML but not declared in ResourceDictionary
+    → HALT: "Converter '<Name>' not in ResourceDictionary — XamlParseException at runtime"
+  · xmlns:local or converter namespace does not map to correct assembly
+    → HALT: "Converter namespace '<ns>' cannot be resolved"
+  · Effect.Color not a valid Brush/ARGB string
+    → HALT: "Invalid Effect property — XamlParseException at runtime"
+
+C# Runtime Checks:
+  · DataContext not assigned in Window/UserControl constructor
+    → HALT: "DataContext not set in '<Window>' — bindings return null at runtime"
+  · Event handler declared in XAML but method missing in code-behind
+    → HALT: "Handler '<name>' missing in code-behind — NullReferenceException at runtime"
+  · Async void event handler with unhandled exception path
+    → HALT: "Async handler '<name>' has no exception handling — silent crash risk"
+  · Task.Wait() or .Result on UI thread
+    → HALT: "Blocking call on UI thread — deadlock at runtime"
+  · ICommand.CanExecute never returns true for required commands
+    → HALT: "Command '<name>' CanExecute always false — button permanently disabled"
+  · ObservableCollection modified from non-UI thread without Dispatcher
+    → HALT: "Collection cross-thread modification — InvalidOperationException at runtime"
+  · Navigation target Window/Page class does not exist
+    → HALT: "Navigation target '<ClassName>' not found — runtime crash on navigate"
+```
+
+---
+
+### Pre-Check 5: NuGet Dependency Validation
+
+```
+FOR EACH nuget_package in skill-extraction.json → controls[].nuget_package:
+  IF missing from .csproj:
+    → dotnet add package <nuget_package>; dotnet restore
+    → FAIL if restore fails: "Package '<name>' could not be installed"
+
+Core packages (always required):
+  ✅ Syncfusion.Core.WinUI  ✅ Syncfusion.Licensing
+
+IF any Syncfusion packages use different versions:
+  → HALT: "Version mismatch — all Syncfusion packages must use identical versions"
+```
 
 ```bash
-& $msbuild /t:Build /p:Configuration=Debug /p:Platform=x64 /v:detailed YourProject.csproj 2>&1 | Tee-Object build.log
+# Namespace error resolution
+dotnet list package | grep Syncfusion   # compare with skill-extraction.json
+dotnet add package <name> --version <ver>
 ```
 
-**Key Parameters:**
-- `/t:Build` - Build target (Build, Clean, Rebuild)
-- `/p:Configuration` - Debug or Release
-- `/p:Platform` - x64, x86, or ARM64
-- `/v:detailed` - Verbosity (minimal, normal, detailed, diagnostic)
+---
 
-### Compilation Methods (Priority Order)
+### Pre-Check 6: MVVM & Binding Integrity
 
-| Priority | Method | Details | Use When |
-|----------|--------|---------|----------|
-| 1 | **MSBuild Compiler** | Direct XAML error reporting with file/line; native XamlCompiler integration | Primary method for WinUI validation |
-| 2 | **Visual Studio IDE** | Interactive debugging; Error List shows all XAML issues | Local development needed |
-| 3 | **dotnet build** | CLI-based compilation; good for CI/CD pipelines | MSBuild not available or automation required |
-| 4 | **Manual XAML inspection** | Spot-check for known WPF patterns | Quick local verification |
+```
+FOR EACH .xaml file:
+  · {x:Bind X} → X exists in ViewModel or code-behind
+    → HALT: "Binding '<X>' not found — File: <file>, Line: <line>"
+  · {x:Bind XCommand} → ICommand XCommand in ViewModel
+    → HALT: "Command '<XCommand>' not found"
+  · Event handler X in XAML → method X in code-behind
+    → HALT: "Handler '<X>' missing in <file>.xaml.cs"
 
-## XAML Error Resolution Workflow
+FOR EACH ViewModel:
+  · Implements INotifyPropertyChanged
+    → HALT: "<ViewModel> missing INotifyPropertyChanged"
+  · No business logic in code-behind
+    → HALT: "Business logic in code-behind — move to ViewModel/Service"
+```
 
-**Step 1: Run MSBuild Compilation**
+---
+
+### Build Execution
+
+#### Pre-Build Gate (MANDATORY before any build command)
+```
+CONFIRM Pre-Check 1 status == COMPLETE AND PASS
+  ❌ → HALT: "Validation incomplete — cannot compile. Complete skill validation first."
+IF dotnet build invoked at any point:
+  → FAIL: "Invalid build tool — use MSBuild from Visual Studio toolchain"
+✅ Gate cleared → proceed to Step 1
+```
+
+#### Step 1: Resolve MSBuild Path
+```
+# Priority 1 — VS2026 (Primary)
+"C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe"
+"C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
+
+# Priority 2 — VS2022 (Secondary — only if VS2026 not found)
+"C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
+"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+
+IF no path resolves → HALT: "VS2026/VS2022 MSBuild not found — install Visual Studio"
+SET msbuild_exe = first resolved path
+```
+❌ Do NOT use legacy MSBuild · ❌ Do NOT use `dotnet build`
+
+#### Step 2: Execute Build
 ```bash
-# First, discover MSBuild path (VS2026 > VS2022)
-$msbuild = "C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe"
-if (!(Test-Path $msbuild)) { $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe" }
-& $msbuild /t:Build /p:Configuration=Debug /p:Platform=x64 /v:detailed YourProject.csproj 2>&1 | Tee-Object build.log
+"<msbuild_exe>" <ProjectName>.sln /t:Build /p:Configuration=Debug /p:Platform="x64" /v:detailed /flp:logfile=build.log;verbosity=detailed
 ```
 
-**Step 2: Parse Errors from Log**
-```powershell
-Select-String -Path "build.log" -Pattern "error|Error" | ForEach-Object { $_.Line }
+| Flag | Purpose |
+|---|---|
+| `/t:Build` | Runs Build target |
+| `/p:Configuration=Debug` | Debug configuration |
+| `/p:Platform="x64"` | Required for WinUI / Windows App SDK |
+| `/v:detailed` | Full task/target trace |
+| `/flp:logfile=build.log;verbosity=detailed` | Persists log for post-failure inspection |
+
+**Error codes:** XAML → `XC` (e.g., `XC3001`) · C# → `CS` (e.g., `CS0246`)
+
+#### Step 3: Build Failure Recovery (MANDATORY if build fails)
 ```
-Look for: `Unknown member 'PropertyName' on 'ControlName'` (File.xaml, Line XX)
+IF MSBuild fails:
+  1. READ build.log → extract all error codes and messages
+  2. FOR EACH error:
+       a. Identify the Syncfusion control or API involved
+       b. RE-READ the skill file: skill-extraction.json → controls[].sources_read[0]
+          + all advanced_features_read[] files for that control
+       c. Compare failing property/event/method against valid_properties[]/valid_events[]/valid_methods[]
+       d. IF mismatch found → correct in generated file using skill-file-verified value
+       e. IF error is WinUI SDK violation → apply Pre-Check 2 fix table
+       f. IF package missing → install via Pre-Check 5 resolution
+  3. Re-run Pre-Check 1C (skill validation) on corrected files
+  4. Re-run MSBuild
+  5. IF still failing after 3 cycles → HALT: "Build not resolved after 3 attempts
+                                               Manual review of build.log required"
 
-**Step 3: Cross-Reference Against Skill Definitions**
-- Open: `.apm/skills/syncfusion-winui-ui-builder/references/syncfusion-{controlname}.md`
-- Verify supported properties and versions
-- Check namespace/assembly mappings in `.csproj`
-
-**Step 4: Apply Corrections**
-- Replace format string properties with DataTemplate approach
-- Update deprecated properties to WinUI equivalents
-- Ensure all Syncfusion packages match version
-
-**Step 5: Rebuild & Verify**
-```bash
-& $msbuild /t:Rebuild /p:Configuration=Debug /p:Platform=x64 YourProject.csproj
-```
-Confirm: exit code 0
-
-## dotnet build Fallback Method
-
-Use this when MSBuild is unavailable or in automated CI/CD pipelines where only .NET CLI is available.
-
-**Compile with dotnet build:**
-```bash
-dotnet build YourProject.csproj --configuration Debug --verbosity diagnostic 2>&1 | Tee-Object build.log
-```
-
-**Extract XAML Errors from Log:**
-```powershell
-Select-String -Path "build.log" -Pattern "Unknown member|Type not found|Resource not found" | ForEach-Object { Write-Host $_.Line -ForegroundColor Red }
+❌ Do NOT fix build errors by guessing — skill file is the only source of truth
+❌ Do NOT fallback to native WinUI/MS controls without confirming no Syncfusion equivalent exists
 ```
 
-**Advantages of dotnet build:**
-- No MSBuild/Visual Studio installation required
-- Works on any .NET SDK-equipped system
-- Good for CI/CD pipelines (GitHub Actions, Azure Pipelines)
-- Cross-platform support
+| Build Result | Action |
+|---|---|
+| **0 errors** | ✅ Proceed to Phase 2 |
+| **Errors** | ⛔ Run Step 3 recovery · re-read skill file · retry |
+| **Warnings only** | ✅ Proceed; log for review |
 
-**Limitations:**
-- Generic `MSB3073` wrapper errors may hide actual XAML issues
-- Errors less detailed than MSBuild direct output
-- Diagnostic output verbose and harder to parse
+---
 
-**Verbosity Levels for dotnet build:**
-```bash
-# Minimal output
-dotnet build YourProject.csproj --verbosity minimal
+## Phase 2: Post-Build Quality Validation
 
-# Normal output (default)
-dotnet build YourProject.csproj --verbosity normal
+Run only after MSBuild 0 errors.
 
-# Detailed output (shows more compilation info)
-dotnet build YourProject.csproj --verbosity detailed
+### Check 1: WinUI & MVVM Standards
 
-# Diagnostic output (maximum detail, suitable for troubleshooting)
-dotnet build YourProject.csproj --verbosity diagnostic 2>&1 | Tee-Object build-diagnostic.log
+| Rule | Fail Condition |
+|---|---|
+| MVVM separation | Business logic in code-behind |
+| ViewModel binding | `{x:Bind X}` — `X` not in ViewModel/code-behind |
+| Command binding | `{x:Bind XCommand}` — not an `ICommand` |
+| Event handlers | Handler in XAML with no implementation |
+| DataContext | Window/UserControl missing `DataContext` |
+| Navigation | Success path doesn't open target Window |
+| Responsive layout | Hardcoded pixel widths for fluid columns |
+
+### Check 2: Accessibility (WCAG 2.1 AA)
+
+| Rule | Requirement |
+|---|---|
+| Color contrast | ≥ 4.5:1 for all text |
+| `AutomationProperties.Name` | All interactive Syncfusion controls |
+| `AutomationProperties.HelpText` | Controls needing extra context |
+| Keyboard navigation | Logical tab order; Enter/Space on buttons |
+| Focus visibility | Visible indicator; ≥ 3:1 contrast |
+| No color-only state | Errors via text/icon, not color alone |
+| Touch targets | ≥ 44×44 DIP |
+
+### Check 3: Security
+
+| Rule | Fail Condition |
+|---|---|
+| No hardcoded secrets | Passwords, API keys, connection strings in XAML/C# |
+| No unsafe XamlReader | `XamlReader.Load()` on user input |
+| Input validation | User input not validated before use |
+| License key | `SYNCFUSION_LICENSE_KEY` from env var only |
+
+### Check 4: Performance
+
+| Rule | Requirement |
+|---|---|
+| List virtualization | `SfDataGrid`/`SfTreeView` 100+ items — enabled |
+| Async operations | >100ms → `async/await`; no `Task.Wait()` on UI thread |
+| DPI-aware sizing | All sizes in DIP; no hardcoded pixels |
+| Memory leaks | Event handlers unsubscribed on `Unloaded` |
+
+### Check 5: Resource Integrity
+
+| Rule | Fail Condition |
+|---|---|
+| `{StaticResource X}` defined | Key not in merged ResourceDictionaries |
+| `{ThemeResource X}` defined | Key not resolvable by WinUI theme system |
+| No duplicate `x:Key` | Same key defined twice in same file |
+| Valid ARGB colors | Not `#AARRGGBB` or `#RRGGBB` |
+| Relative paths only | ResourceDictionary Source uses absolute path |
+| Converters declared | Converter in XAML not in ResourceDictionary |
+
+### Check 6: Syncfusion Integration
+
+| Rule | Requirement |
+|---|---|
+| License registered | `RegisterLicense()` in `OnLaunched()` before any control |
+| Controls from skill files | No invented APIs; verified in `getting-started.md` |
+| WinUI namespaces | `using:Syncfusion.UI.Xaml.<ControlNamespace>` format |
+| NuGet packages | All from `skill-extraction.json` at matching version |
+
+---
+
+## Validation Report
+
+```
+╔═════════════════════════════════════════════════════════════╗
+║                 STAGE 7: VALIDATION REPORT                  ║
+╠═════════════════════════════════════════════════════════════╣
+║  ⛔ MANDATORY GATE                                           ║
+║  Pre-Check 0 — Startup View Config      ✅ PASS / ❌ FAIL  ║
+╠═════════════════════════════════════════════════════════════╣
+║  PHASE 1 — PRE-COMPILATION                                  ║
+║  Pre-Check 1 — Skill API Validation     ✅ PASS / ❌ FAIL  ║
+║  Pre-Check 2 — WinUI SDK Compliance     ✅ PASS / ❌ FAIL  ║
+║  Pre-Check 3 — XAML Structure           ✅ PASS / ❌ FAIL  ║
+║  Pre-Check 4 — Runtime Error Prevention ✅ PASS / ❌ FAIL  ║
+║  Pre-Check 5 — NuGet Dependencies       ✅ PASS / ❌ FAIL  ║
+║  Pre-Check 6 — MVVM & Bindings          ✅ PASS / ❌ FAIL  ║
+║  Build Tool  (VS2026/VS2022)            ✅ PASS / ❌ FAIL  ║
+║  MSBuild     (build.log)                ✅ PASS / ❌ FAIL  ║
+╠═════════════════════════════════════════════════════════════╣
+║  PHASE 2 — POST-BUILD QUALITY                               ║
+║  Check 1 — WinUI & MVVM Standards       ✅ PASS / ❌ FAIL  ║
+║  Check 2 — Accessibility WCAG AA        ✅ PASS / ❌ FAIL  ║
+║  Check 3 — Security                     ✅ PASS / ❌ FAIL  ║
+║  Check 4 — Performance                  ✅ PASS / ❌ FAIL  ║
+║  Check 5 — Resource Integrity           ✅ PASS / ❌ FAIL  ║
+║  Check 6 — Syncfusion Integration       ✅ PASS / ❌ FAIL  ║
+╠═════════════════════════════════════════════════════════════╣
+║  Issues: <count> — [check #, rule, fix]                     ║
+╠═════════════════════════════════════════════════════════════╣
+║  OVERALL: ✅ PASS → Stage 8 · ❌ FAIL → Fix and re-run     ║
+╚═════════════════════════════════════════════════════════════╝
 ```
 
-**CI/CD Pipeline Example (dotnet build):**
-```powershell
-# GitHub Actions / Azure Pipelines compatible
-$projectFile = "YourProject.csproj"
-$logFile = "build-diagnostic.log"
+---
 
-# Run compilation with diagnostic verbosity
-dotnet build $projectFile --configuration Debug --verbosity diagnostic > $logFile 2>&1
+## User Decision
 
-# Parse for XAML errors
-$xamlErrors = Select-String -Path $logFile -Pattern "Unknown member|Type not found|Resource not found"
-
-if ($xamlErrors.Count -gt 0) {
-    Write-Host "XAML Compilation Errors Found:" -ForegroundColor Red
-    $xamlErrors | ForEach-Object { Write-Host "  $($_.Line)" -ForegroundColor Red }
-    exit 1
-}
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "✓ Build succeeded - No XAML errors" -ForegroundColor Green
-    exit 0
-}
-
-Write-Host "✗ Build failed - Review log file: $logFile" -ForegroundColor Red
-exit 1
+```
+  [A] Auto-fix all issues → re-run all checks → Stage 8
+  [B] Fix manually → re-run on request
+  [C] Proceed to Stage 8 anyway (warn if FAIL)
+  [D] Cancel
 ```
 
-**Comparison: MSBuild vs dotnet build**
+---
 
-| Aspect | MSBuild | dotnet build |
-|--------|---------|--------------|
-| Error Detail | Direct, specific XAML errors | Generic wrapper (MSB3073) with buried details |
-| Performance | Faster native compilation | Slightly slower (CLI overhead) |
-| Availability | Requires Visual Studio | Requires .NET SDK only |
-| CI/CD Friendly | Good with path discovery | Better for automated systems |
-| Local Development | Recommended | Alternative |
-| File/Line Info | Precise line numbers | May be vague |
-| Format Strings | Full error context | May require log parsing |
+## Proceed to Stage 8 Criteria
 
-**When to Use Fallback (dotnet build):**
-- Visual Studio/MSBuild not installed on CI/CD agent
-- Cross-platform builds (Linux, macOS)
-- Lightweight container environments
-- Automated scripts without Visual Studio dependency
-- Development on systems with .NET SDK only
+✅ **Proceed if:** Pre-Check 0 PASS · Phase 1 all PASS · Build tool resolved · MSBuild 0 errors · Phase 2 all PASS (or user confirms C)
 
-## Validation Result
+⛔ **Do not proceed if:** Pre-Check 0 FAIL · Build tool not found · Build fails after 3 recovery cycles · Any Phase 1 unresolved · User has not reviewed report
 
-**Binary Result: PASS ✓ or FAIL ✗**
-
-**If PASS:**
-- All standards met (accessibility, security, performance, responsive design, XAML properties, theme resources)
-- Proceed to next stage
-- "✓ Validation Passed: API signatures verified against skill definitions"
-
-**If FAIL:**
-- Identify specific errors with file/line references
-- Apply corrections from property mapping table
-- Rebuild and verify with MSBuild
-- Iterate until all errors resolved
-
-**User Decision:** Confirm validation passes before proceeding to dependencies stage.
+**CRITICAL:** Application is NOT COMPLETE until Pre-Check 0 passes and MSBuild succeeds.

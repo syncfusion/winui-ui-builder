@@ -1,188 +1,234 @@
 # Stage 6: Dependencies
 
-**Purpose:** Detect required packages, resolve version conflicts, prepare NuGet install command.
-
-## ⚠️ CRITICAL: Check Skill Files BEFORE Adding NuGet Packages
-
-**This step is MANDATORY before finalizing any NuGet package installation.**
-
-### Step 0: Skill File Verification (REQUIRED)
-
-**For every Syncfusion control used in the generated code, you MUST verify the correct NuGet package and namespace from the skill file BEFORE adding packages.**
-
-1. **Locate Skill Files** (recursive search in order):
-   - `.codestudio/skills/<skill-name>/SKILL.md`
-   - `.agent/skills/<skill-name>/SKILL.md`
-   - `.agents/skills/<skill-name>/SKILL.md`
-   - `.github/skills/<skill-name>/SKILL.md`
-   - `skills/<skill-name>/SKILL.md`
-   - `.apm/Winui/skills/<skill-name>/SKILL.md`
-
-2. **Extract Authoritative Information from EACH Skill:**
-   - **NuGet Package Name**: The exact package that provides the control (e.g., `Syncfusion.UI.Xaml.Grid`, `Syncfusion.UI.Xaml.Charts`)
-   - **Namespace**: The exact `using:` URI for XAML (e.g., `using:Syncfusion.UI.Xaml.DataGrid`)
-   - **Version Requirements**: Any specific version constraints mentioned
-   - **Additional Dependencies**: Any peer packages required (e.g., `Syncfusion.Licensing`)
-
-3. **Cross-Reference with controls.csv:**
-   - Verify the control exists in `scripts/controls.csv`
-   - Use the `Syncfusion Control Name` column (e.g., `SfDataGrid`, `SfCalendar`)
-   - Compare with the skill file's stated package
-
-4. **Build Verification Query:**
-   ```
-   Skill: <skill-name>
-   → NuGet Package: <package-name>
-   → Namespace: <namespace>
-   → Version: <if specified>
-   ```
-
-**Example Skill File Check:**
-
-| Control | Skill File Location | NuGet Package | Namespace |
-|---------|-------------------|---------------|-----------|
-| SfDataGrid | `.apm/Winui/skills/syncfusion-winui-datagrid/SKILL.md` | Syncfusion.Grid.WinUI | Syncfusion.UI.Xaml.DataGrid |
-| SfCalendar | `.apm/Winui/skills/syncfusion-winui-calendar/SKILL.md` | Syncfusion.UI.Xaml.Calendars | Syncfusion.UI.Xaml.Calendar |
-| SfComboBox | `.apm/Winui/skills/syncfusion-winui-combobox/SKILL.md` | Syncfusion.UI.Xaml.Inputs | Syncfusion.UI.Xaml.Inputs |
-
-**⚠️ WARNING: Do NOT assume NuGet package names**
-- `SfDataGrid` → `Syncfusion.Grid.WinUI` (NOT `Syncfusion.UI.Xaml.Grid`)
-- `SfCalendar` → `Syncfusion.UI.Xaml.Calendars` (NOT `Syncfusion.UI.Xaml.Calendar`)
-- `SfComboBox` → `Syncfusion.UI.Xaml.Inputs` (NOT `Syncfusion.UI.Xaml.ComboBox`)
-- Always verify from the skill file!
+**Purpose:** Detect required NuGet packages from skill files, resolve versions, deduplicate, and prepare installation commands.
 
 ---
 
-## Step 1: Detect Required Packages
+## ⛔ MANDATORY RULE: No Assumptions — Skill Files ONLY
 
-**AI Should:**
+**Before adding ANY NuGet package:**
+1. ✅ Read `skill-extraction.json` (produced by Stage — Control Skill Extraction) to access pre-extracted package data
+2. ✅ Verify all controls in `skill-extraction.json` have `validation_status: "PASS"`
+3. ✅ Extract **exact** package name from `nuget_package` field (already verified in Stage — Control Skill Extraction)
+4. ✅ Use **version from Stage 2 detection** (matching Syncfusion version in project)
+5. ✅ Never assume, infer, or guess package names or versions
 
-1. **Scan generated code imports** and list all Syncfusion namespaces used
-2. **Query EACH control's skill file** to get the authoritative NuGet package name
-3. **List all Syncfusion.UI.Xaml.* packages** identified from skill files
-4. **Check for other WinUI dependencies** (Windows App SDK 1.5.0+, .NET 6.0+, etc.)
-5. **Identify any community toolkit or MVVM Framework packages** if used
+**Why this matters:**
+- ❌ `syncfusion-winui-masked-TextBox` ≠ `Syncfusion.Core.WinUI` (actual: `Syncfusion.Editors.WinUI`)
+- ❌ Guessing versions causes assembly mismatches and runtime failures
+- ✅ Only `skill-extraction.json` (pre-validated) is authoritative for package resolution
 
----
+**Rejection criteria:**
+- ❌ Any control missing from `skill-extraction.json`
+- ❌ Any entry with `validation_status != "PASS"`
+- ❌ Any package NOT explicitly in `nuget_package` field
+- ❌ Any version mismatch from Stage 2 detection
 
-## Step 2: Check Project's .csproj
-
-- What packages already installed?
-- What versions are currently in use?
-- Any version conflicts?
-
----
-
-## Step 3: Skill-Based Package Resolution
-
-**Using the information extracted from skill files in Step 0:**
-
-1. **If Syncfusion package already installed:**
-   - Is version compatible? (All Syncfusion.UI.Xaml.* packages should match major.minor version)
-   - Suggest upgrade if needed for security/features
-
-2. **If peer dependencies conflict:**
-   - Windows App SDK version must be 1.5.0+
-   - .NET version must be 6.0+
-   - Recommend resolution (upgrade, downgrade, or compromise)
-
-3. **Critical Namespace Verification:**
-   - Cross-reference the `SKILL.md` of each control to find the exact NuGet package that provides the namespace
-   - Example: `SfAvatarView` requires `Syncfusion.UI.Xaml.Notifications`; `SfLinearProgressBar` requires `Syncfusion.UI.Xaml.ProgressBar`
-   - Ensure the `using:` URI in XAML matches the detected NuGet package namespace
-
-4. **Skill File Missing?**
-   - If a skill file is not found for a control, fall back to `scripts/controls.csv` + official Syncfusion documentation
-   - Check `https://www.syncfusion.com/winui-controls/<control-name-lowercase>` for authoritative package info
+**Consequence:** Do not proceed with installation if package source cannot be verified in `skill-extraction.json`.
 
 ---
 
-## Step 4: Prepare Installation Command
+## ⛔ ERROR HANDLING: Missing Syncfusion Control ('does not exist in namespace...')
 
-- Generate **MSBuild restore command** using **skill-verified package names** (PRIMARY)
-- List packages to add with exact names from skill files
-- List packages to upgrade (if needed)
-- Provide fallback `dotnet` and `nuget` commands
+**Common error in Stage 5-6:**
+- ❌ `'SfCombobox' does not exist in namespace 'using:Syncfusion.UI.Xaml.Core'`
+- ❌ `XAML Compilation Error: Type X not found`
 
-**Example Output:**
+**Root cause:** NuGet package not installed OR package name guessed/assumed
+
+**Mandatory fix:**
+1. ✅ Read `control-mapping.json` to identify which controls are mapped
+2. ✅ For each control, read the corresponding skill file (`getting-started.md`)
+3. ✅ Extract EXACT NuGet package name (e.g., `Syncfusion.Editors.WinUI` for `SfCombobox`)
+4. ✅ Install package using latest stable version from NuGet registry
+5. ⛔ If package name is unclear or missing from skill file → HALT. Do NOT attempt to install guessed names
+6. ⛔ DO NOT fallback to Microsoft native controls (e.g., `TextBox`, `ComboBox`) — Syncfusion skill file is authoritative
+
+**Verification (Cross-Check Against Skill Files — NO BUILD):** After installation, execute the following checks WITHOUT running `dotnet build`:
+```
+FOR EACH package installed:
+  1. FIND in skill-extraction.json → controls[].nuget_package field
+     ❌ Not found → HALT: "Installed package not in skill-extraction.json"
+  
+  2. READ corresponding skill file (controls[].sources_read[0])
+  
+  3. EXTRACT declared namespaces from getting-started.md
+     ❌ Namespace missing → HALT: "Namespace not documented in skill file"
+  
+  4. VERIFY .csproj PackageReference matches skill file version
+     ❌ Version mismatch → HALT: "Version conflict — re-read skill file"
+
+✅ ALL packages cross-checked and verified → Ready for Stage 7 MSBuild compilation
+```
+⛔ **DO NOT use `dotnet build` at this point.** Stage 7 uses MSBuild only for WinUI projects.
+
+---
+
+## 🔴 Stage 6 Entry Gate: Reject Non-Verified Controls
+
+**BLOCKING check before any dependency resolution:**
+
+```
+IF skill-extraction.json missing:
+  → ❌ HALT: "Stage — Control Skill Extraction not completed. Cannot identify NuGet packages."
+
+FOR EACH control in skill-extraction.json:
+  IF validation_status != "PASS":
+    → ❌ HALT: "Control validation failed. Check Stage — Control Skill Extraction output."
+
+  IF nuget_package == null OR nuget_package == "":
+    → ❌ HALT: "NuGet package undefined for control. Skill file missing?"
+
+ALL checks pass → ✅ Gate cleared. Proceed to Step 1.
+ANY check fails → ❌ HALT. Do NOT proceed to dependency installation.
+```
+
+---
+
+## 6-Step Dependency Workflow
+
+### Step 1: Read `skill-extraction.json` & Identify Packages
+- Load: `<project-root>/skill-extraction.json` (pre-validated from Stage — Control Skill Extraction)
+- For each control entry:
+  - Use `nuget_package` field directly (already extracted + verified in Stage — Control Skill Extraction)
+  - Use `nuget_version` field to match project's Syncfusion version
+- **Output:** Control → Official Package mapping (pre-verified, no re-extraction needed)
+
+### Step 2: Scan Project .csproj
+- Check existing Syncfusion packages and versions
+- Identify framework target (net10.0-windows10.0.19041.0, etc.)
+- List already-installed dependencies
+- **Output:** Current project state
+
+### Step 3: Resolve Versions
+
+**Version detection priority (apply in order — stop at first success):**
+
+```
+1. Read Stage 2 output → syncfusion_version field
+   IF version found AND non-empty → use it for ALL Syncfusion packages
+
+2. Scan <ProjectName>.csproj for any existing Syncfusion package version
+   IF found (e.g., <PackageReference Include="Syncfusion.Core.WinUI" Version="*" />)
+   → extract that version → apply to ALL new Syncfusion packages
+
+3. Query NuGet registry:
+   dotnet package search Syncfusion.Core.WinUI --exact
+   IF latest stable version returned → use it
+
+4. IF version CANNOT be determined by any method above:
+   ❌ Do NOT guess a version number
+   ✅ Use version="*" — this resolves to the highest available stable version at install time
+
+   Install command with wildcard:
+   $ dotnet add package Syncfusion.SfDataGrid.WinUI
+
+   (omitting --version lets NuGet resolve the latest stable automatically)
+```
+
+**Wildcard (`*`) rule:**
+
+| Scenario | Version Strategy |
+|---|---|
+| Stage 2 version locked | Use exact version (e.g., `--version 33.2.10`) for ALL packages |
+| Existing Syncfusion package found in `.csproj` | Extract and reuse that version for ALL packages |
+| NuGet registry query succeeds | Use returned latest stable version |
+| Version unknown — cannot determine | Omit `--version` flag (NuGet defaults to latest stable) |
+
+> ⚠️ **Uniformity rule:** Once a version is resolved by any method, ALL Syncfusion packages in the project MUST use that same version. Mixing versions across packages causes assembly mismatch errors at runtime.
+> ⚠️ **No guessing:** Never hardcode a version number that was not retrieved from Stage 2, the `.csproj`, or the NuGet registry. An unknown version is not a reason to invent one — it is a reason to use the wildcard strategy above.
+
+- **Output:** Resolved version string (e.g., `33.2.10`) OR wildcard strategy confirmed with reason logged
+
+### Step 4: Add Required Core Packages (Always)
+- `Syncfusion.Core.WinUI` — foundational package
+- `Syncfusion.Licensing` — license registration
+- **Output:** Core dependencies confirmed
+
+### Step 5: Deduplicate & Consolidate
+- Remove duplicate package entries across controls
+- Consolidate shared dependencies (e.g., `Syncfusion.Core.WinUI` used by multiple controls)
+- List final unique packages with version
+- **Output:** Final package list (no duplicates)
+
+### Step 6: Prepare Installation Command
+- Generate NuGet restore/install commands for new packages
+- Include version for each package (matching Stage 2 version)
+- Exclude already-installed packages
+- **Output:** Ready-to-execute install command
+
+---
+
+## Validation Rules (MANDATORY)
+
+| Check | Valid? | Action |
+|-------|--------|--------|
+| All package names verified in skill files? | ✅ Yes / ❌ No | Halt if not verified; re-read skill files |
+| Version resolved (exact or wildcard)? | ✅ Yes / ❌ No | Use wildcard if version unknown — never guess a number |
+| All Syncfusion packages same version? | ✅ Yes / ❌ No | Enforce uniform version; wildcard counts as uniform if no version known |
+| Core packages included (Core, Licensing)? | ✅ Yes / ❌ No | Add missing core packages |
+| No duplicate packages in final list? | ✅ Yes / ❌ No | Remove duplicates |
+| Package versions compatible with framework? | ✅ Yes / ❌ No | Suggest upgrade or compatible version |
+
+---
+
+## Output Format
 
 ```
 ✓ Dependency Analysis
 
-Skill Verification Complete:
-┌─────────────┬──────────────────────────────────────────────────────────┬─────────────────────────────────┬─────────────┐
-│ Control     │ Skill File                                             │ NuGet Package                   │ Namespace   │
-├─────────────┼──────────────────────────────────────────────────────────┼─────────────────────────────────┼─────────────┤
-│ SfDataGrid  │ .apm/Winui/skills/syncfusion-winui-datagrid/SKILL.md   │ Syncfusion.Grid.WinUI           │ DataGrid    │
-│ SfCalendar  │ .apm/Winui/skills/syncfusion-winui-calendar/SKILL.md    │ Syncfusion.UI.Xaml.Calendars    │ Calendar    │
-│ SfComboBox  │ .apm/Winui/skills/syncfusion-winui-combobox/SKILL.md    │ Syncfusion.UI.Xaml.Inputs       │ Inputs      │
-└─────────────┴──────────────────────────────────────────────────────────┴─────────────────────────────────┴─────────────┘
+Skill File → NuGet Package Mapping:
+  • syncfusion-winui-datagrid    → Syncfusion.SfDataGrid.WinUI (verified)
+  • syncfusion-winui-maskedtextbox   → Syncfusion.Editors.WinUI (verified)
+  • syncfusion-winui-combobox      → Syncfusion.Editors.WinUI (verified)
 
-New Packages to Install:
-  - Syncfusion.Grid.WinUI (verified from skill)
-  - Syncfusion.UI.Xaml.Calendars (verified from skill)
-  - Syncfusion.UI.Xaml.Inputs (verified from skill)
+Core Dependencies (Required):
+  • Syncfusion.Core.WinUI
+  • Syncfusion.Licensing
 
-Existing Packages:
-  ✓ Windows App SDK 1.8+ (compatible)
-  ✓ .NET 8.0+ (compatible)
-  ✓ Syncfusion.Core.WinUI (compatible)
+Control Dependencies (From Skill Files):
+  • Syncfusion.SfDataGrid.WinUI (new)
+  • Syncfusion.Editors.WinUI (new)
+
+Already Installed:
+  • Syncfusion.Core.WinUI ✓
 
 Conflicts: None
 
-INSTALL COMMAND (Choose ONE based on your environment):
-
-PRIMARY - MSBuild (Recommended for WinUI projects):
-$ msbuild YourProject.csproj /t:Restore /p:Configuration=Debug /v:minimal
-$ msbuild /t:Build /p:Configuration=Debug /p:Platform=x64 /v:detailed YourProject.csproj
-
-SECONDARY - NuGet CLI:
-$ nuget restore YourProject.csproj
-$ nuget install Syncfusion.Grid.WinUI -Version 33.2.6
-$ nuget install Syncfusion.UI.Xaml.Calendars -Version 33.2.6
-$ nuget install Syncfusion.UI.Xaml.Inputs -Version 33.2.6
-
-TERTIARY - dotnet CLI (CI/CD only):
-$ dotnet restore YourProject.csproj
-$ dotnet add package Syncfusion.Grid.WinUI --version 33.2.6
-$ dotnet add package Syncfusion.UI.Xaml.Calendars --version 33.2.6
-$ dotnet add package Syncfusion.UI.Xaml.Inputs --version 33.2.6
+Install Command (dotnet CLI — version unknown, wildcard strategy):
+  $ dotnet add package Syncfusion.Core.WinUI
+  $ dotnet add package Syncfusion.Licensing
+  $ dotnet add package Syncfusion.SfDataGrid.WinUI
+  $ dotnet add package Syncfusion.Editors.WinUI
+  ⚠️ Run `dotnet restore` then verify all resolved versions match in .csproj before proceeding
 ```
-
-**⚠️ IMPORTANT:** 
-- Always use **MSBuild as primary** for WinUI projects (`/t:Restore` + `/t:Build`)
-- Use the NuGet package names verified from skill files. Do NOT infer package names from control names (e.g., SfDataGrid → Syncfusion.Grid.WinUI, NOT Syncfusion.UI.Xaml.Grid)
-- Use `dotnet` commands only as fallback for CI/CD environments
-
-**User Interaction:**
-User confirms package installation or does it manually:
-```
-Ready to install dependencies?
-[Install] [Show Command] [Skip]
-```
-
-**Status:** AI detects and prepares. User decides whether to install now or later.
 
 ---
 
-## ⚠️ SKILL FILE FIRST - Package Addition Rule
+## Critical Rules
 
-**MANDATORY WORKFLOW for EVERY package addition:**
+⚠️ **ALWAYS:**
+1. Read skill files BEFORE assuming package names
+2. If version cannot be detected from Stage 2, `.csproj`, or NuGet registry → omit `--version` flag (wildcard); never invent a version number
+3. Enforce uniform Syncfusion version across all packages
+4. Include ALL core packages (Core, Licensing) regardless of controls
+5. Validate package names exactly match skill file documentation
 
-1. **Query the skill file FIRST** (locations listed in Step 0)
-2. **Extract NuGet package name** from skill file's "Required Packages" or "Getting Started" section
-3. **Verify namespace** matches the skill file's documented namespace
-4. **ONLY THEN** add the package to the project
+⚠️ **RUNTIME ISSUE PREVENTION:**
+- **Missing Syncfusion.Core.WinUI** → "Type initializer threw exception"
+- **Missing Syncfusion.Licensing** → License registration fails, watermark appears
+- **Version mismatch across Syncfusion packages** → "Type X in assembly Y does not match type in assembly Z"
 
-**Why This Matters:**
-- `SfDataGrid` requires `Syncfusion.Grid.WinUI` (NOT `Syncfusion.UI.Xaml.Grid`)
-- `SfCalendar` requires `Syncfusion.UI.Xaml.Calendars` (NOT `Syncfusion.UI.Xaml.Calendar`)
-- `SfComboBox` requires `Syncfusion.UI.Xaml.Inputs` (NOT `Syncfusion.UI.Xaml.ComboBox`)
+---
 
-**Inferring package names leads to:**
-- ❌ Wrong package references
-- ❌ Missing namespaces
-- ❌ Build failures
-- ❌ Runtime errors
+## User Interaction
 
-**Always verify from the authoritative skill file before adding packages.**
+```
+✓ All dependencies detected and validated
+✓ No conflicts found
+✓ Installation command ready
+
+[✓ Install Now] [📋 Show Command] [⏭️ Skip for Later]
+```
+
+**Status:** Ready for Stage 7. User can install immediately or manually after code insertion in Stage 9.

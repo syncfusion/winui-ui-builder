@@ -1,6 +1,6 @@
 ---
 name: syncfusion-winui-ui-builder
-description: Generates production-ready WinUI 3 desktop applications powered by Syncfusion WinUI Controls. Orchestrates a structured workflow that handles design thinking, control picking, code generation, and validation with built-in WCAG 2.1 AA accessibility and responsive design. Use when the user asks to create WinUI controls, build desktop UI pages, design interfaces, or generate code for WinUI applications.
+description: Generates production-ready WinUI desktop applications powered by Syncfusion WinUI Controls. Orchestrates a structured workflow that handles design thinking, control picking, code generation, and validation with built-in UI Automation accessibility and DPI-aware responsive design. Use when the user asks to create WinUI controls, build UI windows, design desktop interfaces, or generate code for WinUI applications.
 metadata:
   author: "Syncfusion Inc"
   version: "1.0.0"
@@ -14,416 +14,435 @@ The **Syncfusion WinUI UI Builder** skill is a desktop-only WinUI control genera
 
 ## What This Skill Does
 
-**✅ Generates:**
-- WinUI controls (C# code-behind with XAML markup)
-- XAML layout files with proper namespaces
-- C# interfaces and data models
-- Syncfusion control integration with correct NuGet references
-- Client-side form validation logic
-- WCAG 2.1 AA accessibility markup (accessible controls)
-- Responsive layouts with proper sizing and DPI-aware positioning
-- Control and resource files with proper structure
+**✅ Generates (UI Layer):**
+- WinUI XAML using Syncfusion controls + C# code-behind with MVVM pattern
+- UI Automation accessibility markup (WCAG 2.1 AA)
+- DPI-aware responsive layouts
+- Client-side input validation and event handling
+
+**✅ Generates (Backend Layer):**
+- Service classes with business logic (e.g., `AuthService`, `CustomerService`)
+- Repository interfaces and in-memory implementations
+- Navigation / screen-transition logic
+- Data models, DTOs, and ViewModel interfaces
 
 **❌ Does NOT Generate:**
-- Backend code (services, database handlers, middleware)
-- Database schemas or ORM models
-- Authentication/authorization logic
-- Server-side validation
-- Navigation configuration
-- Environment secrets or infrastructure config
+- Real database schemas, ORM migrations, or SQL
+- Live third-party API integrations
+- Authentication infrastructure (OAuth, JWT issuing)
+- Environment secrets beyond `SYNCFUSION_LICENSE_KEY`
+
+> **Full-feature rule:** Every generated screen must be end-to-end functional — UI wired to backend logic, validation active, and navigation working. Partial logic or stub-only output is not acceptable.
+
+---
 
 ## Quick Start
 
 ### Prerequisites
-
-1. **Active WinUI project** (.NET 8.0+, Windows App SDK 1.8+)
-2. **.NET SDK 8.0+** and Visual Studio 2022 (v17.8+) or later
-3. **Syncfusion WinUI controls library** (latest):
+1. WinUI project targeting Windows App SDK 1.3+ with .NET 8+
+2. Visual Studio 2022+ with WinUI / Windows App SDK workload
+3. Syncfusion WinUI library (auto-installed if missing):
    ```bash
-   dotnet add package Syncfusion.Core.WinUI --version "*"
+   dotnet add package Syncfusion.SfGrid.WinUI
    ```
+4. Node.js 14+ (required for Stage 3 BM25 control-mapping script)
 
-### Basic Usage
+### Examples
 
-**Example 1: Generate a Login Form**
-
+**Login Form**
 ```
 User: "Create a login form with email, password, and remember me checkbox"
-
-Skill executes:
-  → Stage 1: Identifies login form control type
-  → Stage 2: Detects project structure (WinUI, .NET version, etc.)
-  → Stage 3-4: AI creates optimal control-mapping.json → maps to Syncfusion controls
-  → Stage 5: Generates LoginForm.xaml and LoginForm.xaml.cs with validation
-  → Stage 6: Installs NuGet dependencies
-  → Stage 7: Validates WCAG 2.1 AA compliance
-  → Stage 8: Inserts code into project
-
 Output:
   ✓ Views/LoginForm/LoginForm.xaml
-  ✓ Views/LoginForm/LoginForm.xaml.cs
-  ✓ Models/LoginFormModel.cs
+  ✓ Views/LoginForm/LoginForm.xaml.cs           — event handling, navigation on success
+  ✓ ViewModels/LoginViewModel.cs                — INotifyPropertyChanged, ICommand
+  ✓ Services/AuthService.cs                     — credential validation logic
+  ✓ Models/LoginModel.cs                        — email, password, rememberMe fields
 ```
 
-**Example 2: Generate a Data Table**
-
+**Customer Data Table**
 ```
 User: "Build a customer data table with sorting and filtering"
-
 Output:
-  ✓ Views/CustomerTable/CustomerTable.xaml (with Syncfusion DataGrid)
-  ✓ Models/CustomerModel.cs with sample data
-  ✓ Responsive layout with DPI scaling
-  ✓ WCAG 2.1 AA accessibility compliance
+  ✓ Views/CustomerTable/CustomerTable.xaml      — SfDataGrid with sort/filter
+  ✓ ViewModels/CustomerTableViewModel.cs        — ObservableCollection, filter logic
+  ✓ Services/CustomerService.cs                 — data retrieval, search logic
+  ✓ Models/CustomerModel.cs                     — typed model with sample data
 ```
 
-### ⚠️ Important: File Organization Inside Project Directory
+---
 
-**ALL generated files are created INSIDE your WinUI project directory:**
+## Reusable Workflow Instructions
 
-```
-MyWinUIApp/                                (Project Root with .csproj)
-├── Views/
-│   ├── LoginForm/
-│   │   ├── LoginForm.xaml                 ✅ View file
-│   │   └── LoginForm.xaml.cs              ✅ Code-behind
-│   └── CustomerTable/
-│       ├── CustomerTable.xaml             ✅ View file
-│       └── CustomerTable.xaml.cs          ✅ Code-behind
-├── Models/
-│   ├── LoginFormModel.cs                  ✅ Data model
-│   └── CustomerModel.cs                   ✅ Data model
-├── ViewModels/
-│   └── LoginFormViewModel.cs              ✅ ViewModel (if MVVM)
-├── Controls/
-│   └── [Reusable controls]                ✅ Shared control components
-└── MyWinUIApp.csproj                      (Project file)
-```
+### Key Architecture
 
-**Key Principle:** Views, Models, and ViewModels are organized in logical subdirectories within your project root (where `.csproj` exists). Files are never created outside the project directory.
+| Property | Detail |
+|----------|--------|
+| Design | Stateless — conversation history is sole state store |
+| Stages | 8 total (6 automated, 2 user-gated) |
+| User gates | Stage 3 (control confirmation) + Stage 4 (color/design system) |
+| Auto-healing | Stages 5A, 5B, 6A, 7 auto-fix errors before passing downstream |
+| Hard block | Stage 2A blocks on WPF/WinUI framework mismatch |
+| Code scope | Both UI and backend generated together as one complete feature |
 
-## How It Works: 8-Stage AI Orchestration (Stateless)
-
-The skill orchestrates **8 stages of pure AI reasoning** with **two user decision points**.
-
-**Key Architecture:**
-- **Stateless design**: Conversation history maintains state
-- **Pure AI reasoning**: Each stage reads guidance docs, analyzes context, makes decisions
-- **2 user decision gates**: Stage 3 (control confirmation) + Stage 6 (validation result)
-- **6 fully automated stages**: 1, 2, 4, 5, 7, and final code insertion
-- **Dedicated theming stage**: Stage 4 locks design system before code generation
+### Stage Execution Flow (Mandatory Order)
 
 ```
 User Request
     ↓
-[Stage 1: Intent Analysis] 
-  AI reads query → identifies control type & features
+[Stage 1] Intent Analysis
+  → Parse query, identify control type & features, resolve ambiguities
+  → Identify backend requirements (services, validation, navigation) implied by the screen
+  → Read: references/stage-1-intent-analysis.md
+  → Output: Control type + modifiers + target directory + backend scope summary
     ↓
-[Stage 2: Project Detection]
-  AI scans project → detect framework, .NET version, theming strategy, preferences
+[Stage 2] Project Detection
+  → Auto-detect framework, .NET version, color mode, project structure
+  → Detect existing service/repository patterns to match generated backend style
+  → Read: references/stage-2-project-detection.md
+  → Output: Project config + user confirmation (with override option)
     ↓
-[Stage 3: Layout Analysis & Control Mapping] ⭐ USER DECISION #1
-  AI analyzes requirements → creates optimal control-mapping.json
-  AI maps to specific Syncfusion controls (3+ controls)
-  User confirms control selection
+[Stage 2A] Framework Consistency Guard  ⛔ FAIL-FAST
+  → Enforce WinUI namespace: xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    and xmlns:controls="using:Syncfusion.UI.Xaml.<ControlNamespace>"
+  → BLOCK if WPF/WinUI controls or namespaces are mixed
+  → Output: Confirmed namespace declarations or halt with mismatch report
     ↓
-[Stage 4: Theming & Design System] (NEW)
-  AI locks design tokens → Syncfusion theme mapping
-  AI selects color system (brand colors, theming)
-  AI confirms spacing/typography scale (DPI-aware sizing)
-  Design system decisions locked before code generation
+[Stage 3] Layout Analysis & Control Mapping  ⭐ USER GATE #1 + SCRIPT REQUIRED
+  → Read: references/stage-3-layout-analysis.md
+  → Read control-mapping.json to identify:
+      • Relevant Syncfusion controls for each UI element
+      • Associated skill reference files per control
+  → Run BM25 script: node controls_search.cjs <project-root>/control-mapping.json
+    (cd <project-root>\.apm\skills\syncfusion-winui-ui-builder\scripts first)
+  → Map backend actions to each control (e.g., SfButton[Login] → AuthService.ValidateAsync)
+  → Output: control-mapping.json + Syncfusion control map + backend action map + user confirmation
     ↓
-[Stage 5: Code Generation]
-  AI generates XAML, C#, data models
-  Uses theming decisions from Stage 4
-  With accessibility + responsive design built-in
+[Stage 4] Color & Design System  ⭐ USER GATE #2
+  → Read: references/stage-4-theming-and-design-system.md
+  → Lock: light/dark color mode, hex color system, 4pt DIP grid spacing, 1.25 type ratio
+  → Output: Design tokens confirmed; locked before any code generation
     ↓
-[Stage 6: Dependencies]
-  AI detects required NuGet packages (Syncfusion + frameworks)
-  Presents dotnet add command or runs it
+[Stage — Control Skill Extraction] Control Skill Extraction  🔴 BLOCKING PRE-REQUISITE — Before Code Generation
+  → Validate: ALL controls in control-mapping.json have validation='✓ VERIFIED' (score > 10)
+  → For each control: Read skill file → Extract namespace, NuGet package, properties, events
+  → Persist to: <project-root>/skill-extraction.json with validation_status="PASS"
+  → Halt if: Skill file missing OR namespace/package/properties incomplete
+  → Output: skill-extraction.json (pre-validated control metadata for Stage 5 code generation)
     ↓
-[Stage 7: Validation] ⭐ USER DECISION #2
-  AI validates WCAG 2.1 AA + security + performance + theming
-  Binary result: PASS ✓ or FAIL ✗
-  User confirms or overrides
+[Stage 5B-1] Type Safety Enforcement  🔒 CRITICAL — runs BEFORE XAML generation
+  → Validate Background → must be Brush type (SolidColorBrush, LinearGradientBrush, etc.)
+  → Validate Margin → must be "double,double,double,double"
+  → Validate FontSize → must be double > 0
+  → Validate Width/Height → must be double > 0 or Auto
+  → Validate Colors → must be #AARRGGBB or named color
+  → Auto-fix: Replace invalid values with safe defaults
     ↓
-[Stage 8: Code Insertion]
-  AI inserts files into project
-  Updates references, verifies build
+[Stage 5B-2] Resource Validation  🔒 CRITICAL — runs BEFORE XAML generation
+  → Scan all {StaticResource X} and {ThemeResource X} in XAML
+  → Verify each key X exists in merged ResourceDictionary
+  → Auto-inject missing keys with fallback values (e.g., SolidColorBrush #FF000000)
+  → Check for duplicate x:Key values
+    ↓
+[Stage 5] Safe Code Generation  🔒 COMPLETE IMPLEMENTATION — UI + BACKEND
+  **Prerequisite:** skill-extraction.json exists with validation_status="PASS" (from Stage — Control Skill Extraction)
+  **Data source:** All namespaces/properties/events/packages from skill-extraction.json (never guessed)
+  **Pre-Generation Analysis (Mandatory):**
+  → Read: references/stage-5-code-generation.md
+  → Read control-mapping.json FIRST → identify all Syncfusion controls, events, commands
+  → Read corresponding Syncfusion skill file → extract required properties & behaviors
+  → Map XAML controls ↔ control-mapping.json ↔ skill directives for alignment
+
+  **Code Generation Principles (Strict Adherence):**
+  → Generate ONLY methods, properties, events explicitly required by mapped controls
+  → No generic boilerplate, utility methods, or unused stub code
+  → Preserve existing codebase structure; avoid overwriting unrelated members
+  → Tight alignment: every control + event + binding traces back to skill directive
+
+  **UI Generation (Complete Implementation):**
+  → XAML: all Syncfusion namespaces using `xmlns:controls="using:Syncfusion.UI.Xaml.<ControlNamespace>"` format, all mapped controls, all event bindings per skill
+  → .xaml.cs: full event handler implementations, DataContext binding, all using statements (including Microsoft.UI.Xaml)
+  → ViewModel: ALL bound properties (INotifyPropertyChanged), ALL ICommand bindings (RelayCommand)
+
+  **Backend Generation (Skill-Driven):**
+  → Service classes: implement only business logic declared in control map + skill file
+  → Repository + in-memory data: only if skill directives require data access
+  → Navigation: open/close windows per skill success/failure paths
+  → Validation: required fields + format checks per skill specification
+  → Error propagation: surface errors from service → ViewModel → XAML display
+
+  **Functional Completeness & Safety:**
+  → Every control must be fully wired to backend logic (no dead buttons or stub properties)
+  → Output: complete, compilable, tested code — zero missing implementations
+  → Constraints: no overwritten code, no unused members, minimal-but-full functionality
+    ↓
+[Stage 6] NuGet Dependency Management
+  → Read: references/stage-6-dependencies.md
+  → Detect required Syncfusion WinUI NuGet packages
+  → Verify all XAML Syncfusion namespaces have corresponding packages
+  → Output: dotnet add command(s) or auto-install
+    ↓
+[Stage 7] XAML Dry-Run Validation
+  → Read: references/stage-7-validation.md + assets/validation-rules.md
+  → Simulate XamlReader.Load() on generated XAML
+  → Auto-fix: invalid tags, missing namespaces, type mismatches
+  → Loop until parse succeeds (max 5 iterations)
+  → Abort on: circular reference, unsupported control type, licensing error
+  → Output: PASS ✓ or FAIL ✗
+    ↓
+[Stage 8] Code Insertion
+  → Insert all validated files (UI + backend) into project
+  → Update project references, verify build
+  → STOP on errors; report all inserted file paths on success
     ↓
 ✓ Complete
 ```
 
-**Stage Descriptions:**
+### Stage Gate Summary
 
-- **Stage 1 (Intent Analysis)**: Parse user query, identify control type and features. Read: `references/stage-1-intent-analysis.md`
-- **Stage 2 (Project Detection)**: Auto-detect framework, .NET version, theming strategy, control directory. Read: `references/stage-2-project-detection.md`
-- **Stage 3 (Layout Analysis & Control Mapping)**: AI analyzes requirements, creates optimal control-mapping.json, maps to Syncfusion controls. User confirms 3+ control selection. Read: `references/stage-3-layout-analysis.md`
-- **Stage 4 (Theming & Design System)**: Lock design tokens, Syncfusion theme, color system, spacing (DPI-aware), typography. Read: `references/stage-4-theming-and-design-system.md`
-- **Stage 5 (Code Generation)**: Generate WinUI with design tokens from Stage 4 applied + accessibility + responsive design. Read: `references/stage-5-code-generation.md`
-- **Stage 6 (Dependencies)**: Detect NuGet packages (Syncfusion + frameworks), resolve conflicts, prepare install command. Read: `references/stage-6-dependencies.md`
-- **Stage 7 (Validation)**: Validate WCAG 2.1 AA, security, performance, theming integration. Binary pass/fail. Read: `references/stage-7-validation.md` + `assets/validation-rules.md` + `references/winui-standards.md`
-- **Stage 8 (Code Insertion)**: AI inserts files, updates references, verifies build succeeds.
+| Stage | Interaction | Behavior |
+|-------|-------------|----------|
+| 1–2 | Auto-detect | Auto-flow |
+| 2A | Framework check | ⛔ BLOCK on mismatch |
+| 3 | Control + backend action confirmation | ⭐ User gate |
+| 4 | Color/design system confirmation | ⭐ User gate |
+| **5A** | **Skill extraction + validation** | **⛔ BLOCK if file missing or extraction fails** |
+| 5B-1–5B-2 | Property + resource validation | Auto-fix |
+| 5 | UI + backend code generation + skill alignment | Auto-flow (only if Stage — Control Skill Extraction passed) |
+| 6 | Dependency validation gate | ⛔ BLOCK if skill-extraction.json missing |
+| 6–6A | Dependency + binding + service validation | Auto-fix / Fail gate |
+| 7 | XAML dry-run validation | Auto-fix loop |
+| 8 | Code insertion + build verification | Auto-flow |
 
-**User Interaction Summary:**
-
-| Stage | Interaction |
-|-------|-------------|
-| 1 | None (AI analyzes) |
-| 2 | Confirm auto-detected settings |
-| 3 | ⭐ Confirm control selection (3+ Syncfusion controls) |
-| 4 | Confirm theming decisions (design tokens, colors, spacing, typography) |
-| 5 | None (AI generates) |
-| 6 | ⭐ Confirm validation result (pass/fail/override) |
-| 7 | Optional (confirm dotnet add) |
-| 8 | None (AI executes) |
-
-**Total user decision gates: 2** (Stage 3: controls, Stage 6: validation). Rest fully automated with AI reasoning + guidance docs.
+---
 
 ## Agent Instructions
 
-### When User Requests UI Control Generation
-
-1. **Validate scope**: Confirm request is for WinUI controls (not backend/API)
-2. **Load guidance**: Read `stage-1-intent-analysis.md` to understand Stage 1
-3. **Execute 8-stage flow**: Follow the orchestration flow shown above
-4. **Progressive disclosure**: Load stage guides on-demand; load support references only when needed
-5. **Maintain conversation history**: Each stage reads previous decisions from conversation context (stateless)
-
-### Stage Execution & Reference Loading
-
-**Stage 1: Intent Analysis**
-- Read: `references/stage-1-intent-analysis.md`
-- Task: Parse user query, identify control type, resolve ambiguities
-- Output: Control type + modifiers + target directory
-
-**Stage 2: Project Detection**
-- Read: `references/stage-2-project-detection.md`
-- Task: Auto-detect WinUI framework, .NET version, theming strategy, formatting rules
-- Output: Project configuration + user confirmation
-
-**Stage 3: Layout Analysis & Control Mapping** ⭐ MANDATORY SCRIPT EXECUTION
-- Read: `references/stage-3-layout-analysis.md`
-- Task: Analyze user requirements → create optimal control-mapping.json → **RUN controls_search.cjs script** → map to Syncfusion controls
-- Script: `scripts/controls_search.cjs` (uses BM25 algorithm for semantic control matching)
-- Execution: `node controls_search.cjs <project-root>/control-mapping.json`
-- Output: `control-mapping.json` (file) + Control mapping results (chat context) + Summary table
-
-**Stage 4: Theming & Design System** (NEW)
-- Read: `references/stage-4-theming-and-design-system.md`
-- Task: Lock design tokens, Syncfusion theme, color system, spacing (DPI-aware), typography, responsive breakpoints
-- Output: Design system decisions confirmed and ready for code generation
-
-**Stage 5: Code Generation**
-- Read: `references/stage-5-code-generation.md`
-- Task: Generate WinUI XAML, C#, data models using theming from Stage 4
-- Ensure: WCAG 2.1 AA accessibility compliance, responsive design, token architecture applied
-- Output: Generated files ready for review
-
-**Stage 6: Dependencies**
-- Read: `references/stage-6-dependencies.md`
-- Task: Detect required NuGet packages (Syncfusion + frameworks), resolve version conflicts
-- Output: dotnet add command or auto-install
-
-**Stage 7: Validation** ⭐ USER DECISION #2
-- Read: `references/stage-7-validation.md` + `assets/validation-rules.md` + `references/winui-standards.md`
-- Task: Validate WCAG 2.1 AA, security, performance, theming integration standards
-- Auto-apply fixes where possible
-- Output: Binary result (PASS ✓ or FAIL ✗) → user confirms or overrides
-
-**Stage 8: Code Insertion**
-- Task: Insert generated files into project, update references, verify build
-- Output: Success report with file paths
-
-### Boundary Rules (CRITICAL)
-
-**AI agents executing this skill MUST:**
-
-1. **Frontend only**: Never generate backend code (services, database schemas, middleware)
-2. **Mock data only**: Use hardcoded samples or simple data models; no real API calls
-3. **No secrets**: Exception: `.env` or `appsettings.json` for `SYNCFUSION_LICENSE_KEY` when user provides
-4. **WinUI controls only**: Generate `.xaml`/`.xaml.cs` files in appropriate directories
-5. **Redirect backend requests**: *"This skill generates WinUI UI only. Backend integration is your app's responsibility. Ready to generate the UI?"*
-
-### Error Handling
-
-If any stage fails:
-
-1. **Retry once** with same approach
-2. **If retry fails**, attempt workaround or skip to next stage
-3. **Notify user** with error message from stage output
-4. **Offer recovery**: *"Would you like to go back to Stage 3 and choose a different layout?"*
-5. **Reference**: `references/build.md` for common errors
-
-### Resource Loading Strategy (Progressive Disclosure)
-
-**Load SKILL.md first** (you're reading it now) ~400 lines
-
-**Load stage guides on-demand** (each <200 lines):
-- `stage-1-intent-analysis.md` → During Stage 1
-- `stage-2-project-detection.md` → During Stage 2
-- `stage-3-layout-analysis.md` → During Stage 3
-- etc.
-
-**Load support references only when needed**:
-- `winui-standards.md` → When validating in Stage 5
-- `build.md` → When errors occur
-- `assets/validation-rules.md` → When validating in Stage 5
-
-**Result**: Initial load ~400 lines (SKILL.md only). Full spec available on-demand, never exceeding Agent Skills context limits.
+1. **Validate scope**: Confirm request is for a WinUI screen. Generate both UI and backend together — never UI alone.
+2. **Stage — Control Skill Extraction is mandatory**: Before ANY code generation, execute Stage — Control Skill Extraction (Control Skill Extraction). Halt if skill-extraction.json cannot be created or validated.
+3. **Read control-mapping.json before Stage 5**: Identify which controls appear, which events fire, and which backend actions are implied. Generate only what those controls need.
+4. **Follow stage order strictly**: Never skip or reorder stages. Stage — Control Skill Extraction must complete before Stage 5 (code generation).
+5. **Load references on-demand**: Read each stage's `.md` file immediately before executing that stage.
+6. **Stateless execution**: Read all prior decisions from conversation context at each stage start.
+7. **License key handling**:
+   - Check for `SYNCFUSION_LICENSE_KEY` in `appsettings.json` or environment
+   - If missing, prompt: *"Get a free Community License at https://www.syncfusion.com/account/manage-trials"*
+   - If provided, inject into `appsettings.json` + call `registerLicense()` in app init
+   - If skipped, warn that a watermark will appear
 
 ---
 
-## Scripts & Tools
+## Code Generation Rules (Mandatory)
 
-### Stage 3: ControlMapper Script (`controls_search.cjs`)
+### ⛔ Stage — Control Skill Extraction Prerequisite (CRITICAL)
+- **Before ANY code generation in Stage 5**: Execute Stage — Control Skill Extraction (Control Skill Extraction)
+- Confirm `skill-extraction.json` exists with `validation_status: "PASS"`
+- **All code generation must use data from `skill-extraction.json`** (namespaces, properties, events, packages)
+- ❌ Never guess or assume APIs; ❌ Never infer package names
+- ✅ All control metadata must be pre-extracted and verified
 
-**Purpose:** Automatically map UI elements to Syncfusion WinUI controls using BM25 semantic search algorithm.
+### Control-Mapping-Driven Generation
+- **Before generating any code**, read `control-mapping.json` to identify:
+  - Every Syncfusion control required by the screen
+  - The associated skill reference file for each control
+  - The backend action (service method) mapped to each interactive control
+- Generate **only** the methods, properties, commands, and events that are directly required by the mapped controls in XAML
+- Do not add unrelated utility methods, extra services, or placeholder code not tied to a mapped control
 
-**Location:** `scripts/controls_search.cjs`
+### Minimal-but-Complete Rule
+Every generated file must be:
+- **Context-aware**: driven by the specific skill and its control map, not a generic template
+- **Feature-complete**: all controls in XAML are fully wired to logic (no dead buttons or unbound fields)
+- **Minimal**: no boilerplate beyond what the mapped controls require
 
-**What It Does:**
-- Reads `control-mapping.json` with element descriptions and `type_hint` values
-- Searches Syncfusion WinUI control keywords using BM25 ranking algorithm
-- Matches each element to the best-fit Syncfusion control
-- Falls back to `NATIVE_XAML` for unmatched elements
-- Returns control mapping with BM25 scores (0-100 range)
+### Screen Completeness Checklist
+Before finalizing Stage 5 output, verify each screen satisfies:
 
-**Data Source:**
-- `scripts/controls.csv` - 100+ Syncfusion WinUI controls with keywords (auto-loaded)
-
-**Execution Syntax:**
-
-```powershell
-# Navigate to scripts directory
-cd <project-root>\.apm\skills\syncfusion-winui-ui-builder\scripts
-
-# Run with absolute path to control-mapping.json
-node controls_search.cjs <project-root>\control-mapping.json
-```
-
-**Example (Windows):**
-
-```powershell
-cd d:\MyWinUIApp\.apm\skills\syncfusion-winui-ui-builder\scripts
-node controls_search.cjs d:\MyWinUIApp\control-mapping.json
-```
-
-**Prerequisites:**
-- Node.js 14+ installed on system
-- `control-mapping.json` must exist at specified path
-- `controls.csv` must be in same directory as script
-
-**Output:**
-- JSON printed to console with mapped controls + BM25 scores
-- Copy output into chat for Stage 4 (theming) and Stage 5 (code generation)
-- Do NOT save output to file (keep in conversation only)
-
-**Error Handling:**
-- If `control-mapping.json` not found → Error message with full path
-- If `controls.csv` not found → Error message
-- If JSON parse error → Error with line number and context
-
-**BM25 Algorithm Details:**
-- **Tokenization:** Splits keywords on whitespace and commas
-- **Term Frequency (TF):** Counts occurrences in each control
-- **Inverse Document Frequency (IDF):** Ranks rare keywords higher
-- **Saturation (k1=1.5):** Diminishing returns on term frequency
-- **Length Normalization (b=0.75):** Adjusts for control keyword length
+| Requirement | Example (Login Screen) |
+|-------------|------------------------|
+| Input handling | Email → `Textbox`, Password → `PasswordBox` bound to ViewModel properties |
+| Client-side validation | Required field check, email regex, password min-length |
+| Event handling | Login `SfButton` → `LoginCommand.Execute` → `AuthService.ValidateCredentials` |
+| Backend logic | `AuthService.ValidateCredentials(email, password)` returns success/failure |
+| Navigation on success | Opens `DashboardWindow`, closes `LoginWindow` |
+| Error display | Failure message shown via `ContentDialog` or inline `Textbox` error hint |
+| Server-side validation | `AuthService` rejects empty or malformed inputs independently of UI |
 
 ---
 
-## Configuration & User Customization
+## Boundary Rules (Critical)
 
-### Auto-Detected Settings
+| Rule | Detail |
+|------|--------|
+| UI + backend together | Always generate both layers as one complete feature; never UI-only |
+| Syncfusion controls only | Use only Syncfusion WinUI controls; never native MS controls ( ComboBox → `SfComboBox`, DataGrid → `SfDataGrid`, MessageBox → `ContentDialog`, TreeView → `SfTreeView`, Calendar → `SfCalendar`, DatePicker → `SfDatePicker`, TimePicker → `SfTimePicker`) |
+| Skill file + control-mapping.json first | **Mandatory pre-generation:** Read the Syncfusion skill file to extract required properties, behaviors, and constraints BEFORE any code generation in Stage 5. Cross-reference with control-mapping.json to ensure all controls, events, and backend actions align with skill directives. |
+| Dependency rule: Skill files ONLY | **Before adding ANY NuGet package:** (1) Read skill file, (2) Extract exact package name, (3) Use latest stable version, (4) Never assume/infer names. Only packages documented in skill files are permitted. Reject all others. |
+| Mock data only | Use in-memory repositories with sample data; no live DB or real API calls |
+| No secrets | Only `SYNCFUSION_LICENSE_KEY` when user explicitly provides it |
+| Minimal-but-complete | Generate exactly what the mapped controls need — no extra boilerplate |
+| Compilation guaranteed | Stage 6A must pass ALL checks (UI + backend) before any file is inserted |
+| Framework purity | Never mix WPF and WinUI controls or namespaces in same project |
 
-During **Stage 2 (Project Detection)**, AI automatically detects:
+---
 
-- **Framework**: WinUI 3, .NET 6+, Windows App SDK version
-- **Language**: C# (.NET language)
-- **Theming**: XAML theming, default Syncfusion theme, resource dictionaries
-- **Formatting**: C# code style rules, naming conventions
-- **Control Directory**: `Views/`, `Pages/`, `Controls/`, or similar
+## DO ✅ / DON'T ❌ Guidelines
 
-### User Override Options
+**DO:**
+- ✅ Read the Syncfusion skill file FIRST to identify required properties, behaviors, and constraints
+- ✅ Read `control-mapping.json` SECOND to identify mapped controls, events, and backend actions
+- ✅ Cross-reference skill file + control-mapping.json + XAML for tight alignment before any code generation
+- ✅ Generate both UI and backend in Stage 5 as a single cohesive output
+- ✅ Implement full event handler logic (login → validate → navigate), never stubs
+- ✅ Wire every control in XAML to a ViewModel property, command, or event handler
+- ✅ Use `SfDataGrid` for all tabular data; never native `DataGrid`
+- ✅ Lock design tokens in Stage 4 before generating any code in Stage 5
+- ✅ Run the BM25 `controls_search.cjs` script in Stage 3
+- ✅ Apply `AutomationProperties` for all interactive controls
+- ✅ Use relative layouts (Grid/StackPanel); never hardcode widths for responsive areas
 
-In **Stage 2**, user can override any detected setting:
+**DON'T:**
+- ❌ Generate code without reading the Syncfusion skill file first
+- ❌ Skip reading both skill file AND `control-mapping.json` before Stage 5
+- ❌ Generate UI without the corresponding backend service and navigation logic
+- ❌ Use native MS controls (`TextBox`, `Button`, `ComboBox`, `DataGrid`, `ContentDialog` as fallback, etc.)
+- ❌ Generate code not directly required by mapped controls or skill directives (no unused helpers or empty stubs)
+- ❌ Skip Stage 2A framework guard
+- ❌ Generate XAML before Stage — Control Skill Extraction/5B validation passes
+- ❌ Insert code before Stage 6A compilation gate passes
+- ❌ Use `dynamic` types without explicit justification
+- ❌ Hardcode secrets in XAML or code-behind
 
-```
-Detected Settings:
-  Framework: WinUI 3
-  .NET Version: .NET 7
-  Theming: XAML with Syncfusion theme
-  Control Directory: Views/
+---
 
-[Confirm] [Override Each] [Cancel]
-```
+## Error Handling & Validation
 
-### Syncfusion License Configuration
+**Per-stage recovery:**
+1. Retry once with same approach
+2. If retry fails → apply workaround or skip to next stage
+3. Notify user with error message
+4. Offer: *"Would you like to go back to Stage 3 and choose a different layout?"*
+5. Reference `references/Build.md` for common errors
 
-The skill handles license key setup:
+**Compilation fail gate (Stage 6A):**
+- Missing event handler → HALT, regenerate Stage 5
+- Missing binding property → HALT, regenerate Stage 5
+- Missing service method called from ViewModel → HALT, regenerate Stage 5
+- Missing `using` statement → HALT, regenerate Stage 5
 
-1. **Check** for existing `SYNCFUSION_LICENSE_KEY` in `appsettings.json` or environment
-2. **If missing**, prompt user: *"Get a free Community License at https://www.syncfusion.com/account/manage-trials"*
-3. **If provided**, write to `appsettings.json` + inject `registerLicense()` in app initialization
-4. **If skipped**, proceed but warn that watermark will appear in controls
+**XAML parse loop (Stage 7):**
+- Max 5 auto-fix iterations
+- Abort on: circular reference, unsupported control, licensing error
+
+---
+
+## ⛔ MANDATORY ERROR HANDLING PROTOCOL
+
+**If ANY build error or validation failure occurs:**
+
+### Issue 1 & 3: Resource Errors
+**Errors:** Resource key not found or `ResourceDictionary` exception
+- ✅ **Fix:** Stage 4 + Stage 7
+- ✅ Custom resources ONLY: `Themes/Colors.xaml`, `Themes/Spacing.xaml`, `Themes/Typography.xaml`
+- ✅ Use `{ThemeResource}` for system brush keys; use `{StaticResource}` for custom app resources
+
+### Issue 2: Missing Syncfusion Control
+**Error:** `'SfDataGrid' does not exist in namespace...`
+- ✅ **Fix:** Stage 6 (Dependencies)
+- ✅ Read `control-mapping.json` → identify mapped control
+- ✅ Read skill file (`syncfusion-winui-[control]/SKILL.md`) → extract exact NuGet package name
+- ✅ Install package: latest stable version matching Stage 2 version
+- ❌ NEVER assume or infer package names
+
+### Critical Rule: ALWAYS Read Skill Files First
+**If build fails OR control error occurs:**
+1. ✅ Refer back to control's skill file FIRST
+2. ✅ Verify: API names, namespace declarations, NuGet package version
+3. ❌ DO NOT fallback automatically to Microsoft/WinUI default controls (e.g., `TextBox`, `ComboBox`)
+4. ⛔ HALT if skill file missing or ambiguous — no silent corrections
+5. ✅ Retry build with skill-verified changes before next stage
+
+---
+
+## Resource Loading Strategy (Mandatory)
+
+Load files **on-demand only** — never preload all references.
+
+| When | Load |
+|------|------|
+| Before Stage 1 | `references/stage-1-intent-analysis.md` |
+| Before Stage 2 | `references/stage-2-project-detection.md` |
+| Before Stage 3 | `references/stage-3-layout-analysis.md` |
+| Before Stage 4 | `references/stage-4-theming-and-design-system.md` |
+| **Before Stage — Control Skill Extraction** | **`control-mapping.json` (validate ALL controls are ✓ VERIFIED)**<br/>**For each control: read `<skills-root>/syncfusion-winui-<control>/references/getting-started.md`** |
+| After Stage — Control Skill Extraction | ✅ Confirm `skill-extraction.json` exists with `validation_status: "PASS"` before proceeding |
+| Before Stage 5 | `references/stage-5-code-generation.md` + `skill-extraction.json` (pre-extracted data source) |
+| Before Stage 6 | `references/stage-6-dependencies.md` + verify `skill-extraction.json` present |
+| Before Stage 7 | `references/stage-7-validation.md` + `assets/validation-rules.md` |
+| Before Stage 8 | `references/winui-dotnet-standards.md` |
+| On error | `references/Build.md` |
+
+**Initial load:** SKILL.md only. Full spec available on-demand.
+
+**Critical:** Stage — Control Skill Extraction must complete successfully (producing `skill-extraction.json`) before Stage 5 code generation can begin. This is NOT optional.
 
 ---
 
 ## Code Generation Standards
 
-All generated code includes:
-
 ### Accessibility (WCAG 2.1 AA)
-- ✅ Semantic XAML controls with proper naming
-- ✅ AutomationProperties for screen readers
-- ✅ Keyboard navigation support (tab order, focus management)
-- ✅ Color contrast ≥ 4.5:1
-- ✅ Focus indicators on interactive elements
+- `AutomationProperties.Name` and `AutomationProperties.HelpText` on all Syncfusion controls
+- Keyboard navigation: correct tab order, focus management
+- Color contrast ≥ 4.5:1; visible focus indicators on `SfComboBox` and `SfMaskedTextBox`
 
-### Responsive Design
-- ✅ DPI-aware sizing (logical vs physical pixels)
-- ✅ Relative layouts using Grid/StackPanel (no fixed widths)
-- ✅ Adaptive breakpoints for different window sizes
-- ✅ Touch-friendly controls (44x44 device-independent units minimum)
+### Responsive & DPI
+- DPI-aware sizing using logical (device-independent) units
+- Grid/StackPanel layouts; no fixed pixel widths for fluid areas
+- Touch targets ≥ 44×44 device-independent units
 
 ### Security
-- ✅ Input validation in code-behind
-- ✅ No hardcoded secrets in XAML
-- ✅ Secure binding and command patterns
-- ✅ Protection against code injection
+- Input validation in ViewModel and service layer; no hardcoded secrets in XAML
+- Secure binding and command patterns; no code injection vectors
 
 ### Performance
-- ✅ Virtualization for large lists
-- ✅ Event handler optimization
-- ✅ Lazy loading for heavy resources
-- ✅ Efficient data binding
+- `SfDataGrid` virtualization enabled for large datasets
+- Lazy loading for heavy resources; efficient `ObservableCollection` binding
 
-### C# & Types
-- ✅ Full type coverage (no dynamic types without reason)
-- ✅ ViewModel/Model interfaces with XML docs
-- ✅ Event handler signatures
-- ✅ Proper INotifyPropertyChanged implementation
+### C# Quality
+- Full type coverage (no unexplained `dynamic`)
+- `INotifyPropertyChanged` with correct property-change notifications
+- XML doc comments on all public service interfaces and models
+- `RelayCommand` pattern for all ICommand bindings
+
+---
 
 ## Supported Use Cases
 
-- **Login form**: TextBox (email), TextBox (password), CheckBox (remember), Button (submit)
-- **Data table**: DataGrid with sorting, filtering, pagination, row selection
-- **Dashboard**: Multiple controls orchestrated (header, sidebar, main content, footer)
-- **Registration wizard**: Multi-step form with ProgressBar and validation
+| Request Type | Key Syncfusion Controls | Backend Generated |
+|---|---|---|
+| Login form |  `SfMaskedTextBox`, `SfCheckBox`, `ContentDialog` | `AuthService`, `LoginViewModel` |
+| Registration wizard | `SfMaskedTextBox`, `UserRegistrationService`, step validators |
+| Customer data table | `SfDataGrid` (sort, filter, paginate) | `CustomerService`, `ICustomerRepository` |
+| Dashboard | `SfCartesianChart`, `SfDataGrid` | Aggregation services, summary DTOs |
+| Kanban board | `SfKanban` with swimlanes | `TaskService`, status-transition logic |
+| Data analysis tool | `SfChart`, `SfDataGrid`, `SfDatePicker` | Filter/query service, export logic |
+
+---
 
 ## Troubleshooting
 
-**Common Issues:**
-
 | Issue | Solution |
 |-------|----------|
-| "Project type not detected" | Ensure `.csproj` exists with Windows App SDK dependency |
-| "Syncfusion license watermark appears" | Add license key via Stage 2 prompt |
-| "Build fails after insertion" | Check `references/build.md` for conflict resolution |
-| "Control not rendering" | Verify namespace declarations and ensure parent control references correctly |
+| Project type not detected | Ensure `.csproj` has correct WinUI / Windows App SDK target framework entry |
+| Syncfusion watermark appears | Add license key during Stage 2 prompt |
+| Build fails after insertion | See `references/Build.md` |
+| Control not rendering | Verify `xmlns` namespace declarations match installed NuGet packages |
+| XAML parse error loops | Check Stage 7 abort conditions; report control type to user |
+| Missing binding at runtime | Re-run Stage 6A validation; ensure ViewModel DataContext is set |
+| Service method not found | Confirm Stage 5 backend generation included the service; re-run Stage 6A |
+| Navigation not working | Verify success handler in event method opens target Window and closes current |
 
-**Full guide**: See `references/build.md`
+**Full guide:** `references/Build.md`
 
 ## Additional Resources
 
@@ -434,12 +453,11 @@ All generated code includes:
 | Understanding workflow | This SKILL.md file |
 | How Stage X works | `references/stage-X-*.md` |
 | Validation rules | `assets/validation-rules.md` |
-| Accessibility/security | `references/winui-standards.md` |
+| Accessibility/security | `references/winui-dotnet-standards.md` |
 
 ## Support
 
 For issues or questions:
-1. Check `references/build.md` for common problems
-2. Verify your project meets prerequisites (.NET 6+, Windows App SDK 1.3+)
-3. Ensure Syncfusion license is valid and registered
-4. Review generated code compliance report for warnings
+1. Verify your project meets prerequisites (.NET 8+, Windows App SDK 1.3+)
+2. Ensure Syncfusion license is valid and registered
+3. Review generated code compliance report for warnings

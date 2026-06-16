@@ -1,19 +1,19 @@
 /**
  * ControlMapper: BM25-based control search for Stage 3 (CommonJS/Node.js version)
  *
- * Maps user queries (element type + content hints) to Syncfusion WinUI controls
- * using BM25 ranking on control keywords.
+ * Maps UI elements to Syncfusion WinUI controls + skills using BM25 semantic search.
+ * Reads controls.csv for control→skill metadata and updates control-mapping.json.
  *
  * Usage:
- *   // Direct import for Stage 3
- *   const { ControlMapper, stage3ControlPicking } = require('./controls_search.cjs');
- *
- *   const controlMappingJson = {...}; // From Stage 3 (control-mapping.json)
- *   const result = stage3ControlPicking(controlMappingJson);
- *   // Returns: Stage 3 output JSON with mapped controls
- *
- * CLI Usage:
  *   node controls_search.cjs <path-to-control-mapping.json>
+ *
+ * What it does:
+ *   1. Reads control-mapping.json (Simple or Complex structure)
+ *   2. Reads controls.csv for control → skill mappings
+ *   3. BM25 searches element type_hints against control keywords
+ *   4. Maps each element to best-matching Syncfusion control + skill
+ *   5. Updates control-mapping.json with mapping results
+ *   6. Validates all controls matched successfully
  */
 
 'use strict';
@@ -123,8 +123,8 @@ class ControlMapper {
       this.controls.push({
         id: row['Control ID'],
         name: row['Control Name'],
-        skill: row['Skill Name'],
         syncfusionName: row['Syncfusion Control Name'] || row['Control Name'],
+        skill: row['Skill Name'],
         keywords: row['Keywords'],
       });
       this.keywordsList.push(row['Keywords']);
@@ -160,9 +160,9 @@ class ControlMapper {
   }
 
   /**
-   * Get control by exact control name.
+   * Get control skill by exact control name.
    * @param {string} controlName
-   * @returns {[string, string, string] | null} [controlName, syncfusionName, skillName]
+   * @returns {[string, string, string] | null}
    */
   getByName(controlName) {
     for (const ctrl of this.controls) {
@@ -171,124 +171,140 @@ class ControlMapper {
     return null;
   }
 
+  /**
+   * Get all controls for a specific skill.
+   * @param {string} skillName
+   * @returns {Array<[string, string]>}
+   */
+  getBySkill(skillName) {
+    return this.controls
+      .filter(c => c.skill === skillName)
+      .map(c => [c.name, c.skill]);
+  }
+
   /** Get all unique skill names in the database. */
   listSkills() {
     return [...new Set(this.controls.map(c => c.skill))].sort();
   }
+
+  /** Get all controls. */
+  listAll() {
+    return this.controls.map(c => [c.name, c.skill]);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// stage3ControlPicking
+// stage3ControlMapping
 // ---------------------------------------------------------------------------
 
 /**
- * Map Stage 3 control-mapping.json elements to Syncfusion WinUI controls.
+ * Stage 3: Process control-mapping.json and enrich with Syncfusion WinUI control + skill mappings.
  *
- * @param {Object} layoutJson  - Stage 3 output JSON with elements/sections
+ * Supports both:
+ *   - Simple: flat `elements[]` array
+ *   - Complex: `pages[]` array with nested `sections` and `elements`
+ *
+ * @param {Object} layoutJson  - control-mapping.json with project_type, elements or pages
  * @param {string} csvPath     - Path to controls.csv
- * @returns {Object} Dict with mapped_controls, mapped_sections, and validation
+ * @returns {Object} Same structure with enriched control/skill fields
  */
-function stage3ControlPicking(layoutJson, csvPath = 'controls.csv') {
+function stage3ControlMapping(layoutJson, csvPath = 'controls.csv') {
   const mapper = new ControlMapper(csvPath);
 
-  const mappedControls = [];
-  const mappedSections = [];
-  const validationReport = {
-    total_elements: 0,
-    controls_found: 0,
-    native_fallbacks: 0,
-    validation_errors: []
+  let totalElements = 0;
+  let successfulMappings = 0;
+  let fallbackMappings = 0;
+
+  // HANDLE SIMPLE STRUCTURE: elements[] array
+  if (layoutJson.elements && Array.isArray(layoutJson.elements)) {
+    for (const element of layoutJson.elements) {
+      totalElements++;
+      mapElementToControl(element, mapper, () => successfulMappings++, () => fallbackMappings++);
+    }
+  }
+
+  // HANDLE COMPLEX STRUCTURE: pages[] array
+  if (layoutJson.pages && Array.isArray(layoutJson.pages)) {
+    for (const page of layoutJson.pages) {
+      // Simple page with elements
+      if (page.elements && Array.isArray(page.elements)) {
+        for (const element of page.elements) {
+          totalElements++;
+          mapElementToControl(element, mapper, () => successfulMappings++, () => fallbackMappings++);
+        }
+      }
+
+      // Complex page with sections
+      if (page.sections && Array.isArray(page.sections)) {
+        for (const section of page.sections) {
+          if (section.elements && Array.isArray(section.elements)) {
+            for (const element of section.elements) {
+              totalElements++;
+              mapElementToControl(element, mapper, () => successfulMappings++, () => fallbackMappings++);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Add validation metadata
+  layoutJson.validation_status = successfulMappings === totalElements ? "PASS" : "PARTIAL";
+  layoutJson.execution_metrics = {
+    total_elements: totalElements,
+    successfully_mapped: successfulMappings,
+    fallback_controls: fallbackMappings,
+    execution_time_ms: Date.now()
   };
 
-  // AUTO-FLATTEN: Handle both nested sections and flat elements
-  const elementsToMap = [];
-  const hasSections = Array.isArray(layoutJson.sections) && layoutJson.sections.length > 0;
+  return layoutJson;
+}
 
-  if (hasSections) {
-    for (const section of layoutJson.sections) {
-      const sectionId = section.section_id || '';
-      const sectionElements = [];
+/**
+ * Map a single element to a Syncfusion WinUI control using BM25 search.
+ * ⛔ CRITICAL: Only use verified Syncfusion WinUI Control Names from CSV (score > 2).
+ * Do NOT assume or write unverified control names.
+ * Mutates element with control, skill, score, validation fields.
+ */
+function mapElementToControl(element, mapper, onSuccess, onFallback) {
+  const typeHint = element.type_hint || "";
+  const description = element.description || "";
+  const query = `${typeHint} ${description}`.trim();
 
-      for (const element of (section.elements || [])) {
-        elementsToMap.push({ element, sectionId });
-        sectionElements.push(element.id || '');
-      }
+  const results = mapper.search(query, 1);
 
-      if (sectionElements.length > 0) {
-        mappedSections.push({
-          section_id: sectionId,
-          section_name: section.section_name || '',
-          elements: sectionElements,
-        });
-      }
+  if (results.length > 0) {
+    const [controlName, syncfusionName, skillName, score] = results[0];
+    const verified = mapper.getByName(controlName);
+
+    if (verified && score > 2) {
+      // ✅ HIGH-CONFIDENCE: Use verified Syncfusion Control Name from CSV only
+      element.control = syncfusionName;
+      element.skill = skillName;
+      element.score = Math.round(score * 100) / 100;
+      element.validation = "✓ VERIFIED";
+      onSuccess();
+    } else {
+      // ❌ LOW-CONFIDENCE (0 < score ≤ 2) or NO MATCH (score = 0)
+      // ⛔ NEVER write an assumed control name — use NATIVE_XAML only
+      element.control = "NATIVE_XAML";
+      element.skill = null;
+      element.score = score > 0 ? Math.round(score * 100) / 100 : 0;
+      element.validation = score > 0 ? "✗ FALLBACK" : "✗ NO_MATCH";
+      element.fallback_reason = score > 0
+        ? `Low BM25 score (${element.score}) — did not meet verification threshold (>2) for "${controlName}"`
+        : `No matching Syncfusion control found for "${typeHint}"`;
+      onFallback();
     }
   } else {
-    for (const el of (layoutJson.elements || [])) {
-      elementsToMap.push({ element: el, sectionId: null });
-    }
+    // ❌ EMPTY RESULTS: No match found
+    element.control = "NATIVE_XAML";
+    element.skill = null;
+    element.score = 0;
+    element.validation = "✗ NO_MATCH";
+    element.fallback_reason = "Search query produced no results";
+    onFallback();
   }
-
-  // MAP ELEMENTS TO CONTROLS
-  for (const { element, sectionId } of elementsToMap) {
-    const typeHint = element.type_hint || "";
-    const description = element.description || "";
-    const query = `${typeHint} ${typeHint} ${description}`.trim(); 
-    
-    const results = mapper.search(query, 1);
-
-    const controlMap = {
-      element_id: element.id,
-      element_name: element.name,
-    };
-
-    if (sectionId !== null) {
-      controlMap.section_id = sectionId;
-    }
-
-    if (results.length > 0) {
-      const [controlName, syncfusionName, skillName, score] = results[0];
-
-      // Verification
-      const verified = mapper.getByName(controlName);
-      if (verified) {
-        controlMap.control = syncfusionName;  // Use Syncfusion Control Name (e.g., SfDataGrid)
-        controlMap.control_raw = controlName; // Original control name from CSV
-        controlMap.skill = skillName;
-        controlMap.score = Math.round(score * 100) / 100;
-        controlMap.validation = '✓ VERIFIED in controls.csv';
-        validationReport.controls_found += 1;
-      } else {
-        controlMap.control = 'NATIVE_XAML';
-        controlMap.control_raw = controlName;
-        controlMap.skill = null;
-        controlMap.score = 0;
-        controlMap.validation = `✗ ${controlName} NOT in controls.csv - using NATIVE_XAML`;
-        validationReport.native_fallbacks += 1;
-      }
-    } else {
-      controlMap.control = 'NATIVE_XAML';
-      controlMap.control_raw = null;
-      controlMap.skill = null;
-      controlMap.score = 0;
-      controlMap.validation = 'No Syncfusion match - using NATIVE_XAML';
-      validationReport.native_fallbacks += 1;
-    }
-
-    mappedControls.push(controlMap);
-  }
-
-  const output = {
-    control_type: layoutJson.control_type || 'Unknown',
-    variant: layoutJson.variant || 'Default',
-    mapped_controls: mappedControls,
-    validation: validationReport
-  };
-
-  if (hasSections && mappedSections.length > 0) {
-    output.mapped_sections = mappedSections;
-  }
-
-  return output;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,46 +377,22 @@ function parseCsvLine(line) {
 }
 
 // ---------------------------------------------------------------------------
-// writeBackToJson
+// persistMappingToFile
 // ---------------------------------------------------------------------------
 
-function writeBackToJson(layoutJson, result, jsonPath) {
-  const controlLookup = {};
-  for (const entry of (result.mapped_controls || [])) {
-    controlLookup[entry.element_id] = entry;
+/**
+ * Write enriched layoutJson back to control-mapping.json file with proper formatting.
+ * @param {Object} layoutJson - Updated layout with enriched control/skill mappings
+ * @param {string} jsonPath   - Path to control-mapping.json file
+ */
+function persistMappingToFile(layoutJson, jsonPath) {
+  try {
+    const jsonContent = JSON.stringify(layoutJson, null, 2);
+    fs.writeFileSync(jsonPath, jsonContent, 'utf8');
+    console.log(`✓ Successfully updated: ${jsonPath}`);
+  } catch (err) {
+    throw new Error(`Failed to write JSON to ${jsonPath}: ${err.message}`);
   }
-
-  // Inject into sections
-  if (layoutJson.sections) {
-    for (const section of layoutJson.sections) {
-      for (const element of (section.elements || [])) {
-        const mapped = controlLookup[element.id];
-        if (mapped) {
-          element.control = mapped.control;
-          element.control_raw = mapped.control_raw || null;
-          element.skill = mapped.skill;
-          element.score = mapped.score;
-          element.validation = mapped.validation;
-        }
-      }
-    }
-  }
-
-  // SIMPLE MAPPING: Use flat elements array
-  if (layoutJson.elements) {
-    for (const element of layoutJson.elements) {
-        const mapped = controlLookup[element.id];
-        if (mapped) {
-            element.control = mapped.control;
-            element.control_raw = mapped.control_raw || null;
-            element.skill = mapped.skill;
-            element.score = mapped.score;
-            element.validation = mapped.validation;
-        }
-    }
-  }
-
-  fs.writeFileSync(jsonPath, JSON.stringify(layoutJson, null, 2), 'utf8');
 }
 
 // ---------------------------------------------------------------------------
@@ -419,14 +411,64 @@ if (require.main === module) {
     const controlsCsv = path.join(scriptDir, 'controls.csv');
 
     try {
-      if (!fs.existsSync(jsonPath)) throw new Error(`JSON not found: ${jsonFile}`);
+      // ======================================================================
+      // STEP 1: Validate inputs
+      // ======================================================================
+      if (!fs.existsSync(jsonPath)) {
+        throw new Error(`control-mapping.json not found: ${jsonPath}`);
+      }
+      if (!fs.existsSync(controlsCsv)) {
+        throw new Error(`controls.csv not found: ${controlsCsv}`);
+      }
+
+      // ======================================================================
+      // STEP 2: Read control-mapping.json
+      // ======================================================================
+      console.log(`📖 Reading control-mapping.json: ${jsonPath}`);
       const layoutJson = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-      const result = stage3ControlPicking(layoutJson, controlsCsv);
-      
-      console.log(JSON.stringify(result, null, 2));
-      writeBackToJson(layoutJson, result, jsonPath);
+      const projectType = layoutJson.project_type || 'Unknown';
+      console.log(`   Project Type: ${projectType}`);
+
+      // ======================================================================
+      // STEP 3: Process mappings (enriches layoutJson in-place)
+      // ======================================================================
+      console.log(`🔍 Processing ${layoutJson.elements ? 'Simple' : 'Complex'} structure...`);
+      const enrichedJson = stage3ControlMapping(layoutJson, controlsCsv);
+
+      // ======================================================================
+      // STEP 4: Report metrics
+      // ======================================================================
+      if (enrichedJson.execution_metrics) {
+        const metrics = enrichedJson.execution_metrics;
+        console.log(`✓ Mapping Results:`);
+        console.log(`   Total Elements: ${metrics.total_elements}`);
+        console.log(`   Successfully Mapped: ${metrics.successfully_mapped}`);
+        console.log(`   Fallback (NATIVE_XAML): ${metrics.fallback_controls}`);
+        console.log(`   Validation Status: ${enrichedJson.validation_status}`);
+      }
+
+      // ======================================================================
+      // STEP 5: Persist changes to disk (CRITICAL FIX)
+      // ======================================================================
+      console.log(`💾 Persisting changes to control-mapping.json...`);
+      persistMappingToFile(enrichedJson, jsonPath);
+
+      // ======================================================================
+      // STEP 6: Output enriched mapping for verification
+      // ======================================================================
+      console.log(`\n📋 Enriched control-mapping.json (sample):`);
+      if (enrichedJson.elements && enrichedJson.elements.length > 0) {
+        console.log(`   First element: ${JSON.stringify(enrichedJson.elements[0], null, 2).split('\n').slice(0, 5).join('\n')}`);
+      } else if (enrichedJson.pages && enrichedJson.pages.length > 0) {
+        const firstPage = enrichedJson.pages[0];
+        if (firstPage.elements && firstPage.elements.length > 0) {
+          console.log(`   First page/element: ${JSON.stringify(firstPage.elements[0], null, 2).split('\n').slice(0, 5).join('\n')}`);
+        }
+      }
+
+      console.log(`\n✅ Stage 3 control mapping complete!`);
     } catch (err) {
-      process.stderr.write(`Error: ${err.message}\n`);
+      process.stderr.write(`❌ Error: ${err.message}\n`);
       process.exit(1);
     }
   } else {
@@ -435,4 +477,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { BM25, ControlMapper, stage3ControlPicking, writeBackToJson };
+module.exports = { BM25, ControlMapper, stage3ControlMapping, persistMappingToFile };
