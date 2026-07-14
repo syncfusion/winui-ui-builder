@@ -16,9 +16,7 @@ description: "Orchestrate 8-stage WinUI UI development with Syncfusion controls,
 ✅ Design system decisions required (colors, spacing, typography, MVVM)  
 ✅ Complete pages or dashboards from scratch  
 ✅ WCAG 2.2 AA validation for complex layouts  
-✅ Multi-stage workflow: design → code → validate  
-
-**Examples:** Admin dashboard, multi-form wizard, data management portal.
+✅ Multi-stage workflow: design → code → validate
 
 ---
 
@@ -38,8 +36,8 @@ Use the relevant skill directly for:
 
 1. Execute **one stage per turn**; mark each with `[STAGE N]`.
 2. Load the stage reference file **before** executing that stage.
-3. **Stages 1, 2, 2A, 3**: Auto-flow — no user confirmation needed.
-4. **Stages 4, 5, 7, 8**: Gate with explicit user confirmation before proceeding.
+3. **Stages 1, 2, 2A, 3, 4**: Auto-flow — no user confirmation needed.
+4. **Stages 5, 7, 8**: Gate with explicit user confirmation before proceeding.
 5. **Stage 6**: Auto-flow WITH announcement + prerequisite gate + completion gate before Stage 7.
 6. Minimum 3 Syncfusion control names required before Stage 5.
 7. All theming/MVVM decisions must be confirmed before Stage 5.
